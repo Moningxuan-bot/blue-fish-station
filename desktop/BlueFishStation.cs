@@ -38,9 +38,10 @@ static class BlueFishStation
         selftest = Array.IndexOf(args, "--selftest") >= 0;
         Log("=== station start (selftest=" + selftest + ") ===");
 
+        // --selftest must be able to run while a real window is open, so it skips the guard.
         bool createdNew;
         Mutex mutex = new Mutex(true, "BlueFishStationSingleInstance", out createdNew);
-        if (!createdNew)
+        if (!createdNew && !selftest)
         {
             Log("another instance is already running");
             if (!selftest) MessageBox.Show(TITLE + " \u5df2\u7ecf\u5728\u8fd0\u884c\u3002", TITLE, MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -74,6 +75,7 @@ static class BlueFishStation
         form.Height = 920;
         form.MinimumSize = new Size(900, 600);
         form.StartPosition = FormStartPosition.CenterScreen;
+        form.AutoScaleMode = AutoScaleMode.Dpi;
         form.BackColor = Color.FromArgb(15, 17, 21);
         // Window / taskbar icon. Prefer the PNG: the .ico we ship uses PNG-compressed
         // entries, and .NET's Icon class cannot read those (Icon.ToBitmap throws),
@@ -102,7 +104,10 @@ static class BlueFishStation
         try
         {
             CoreWebView2CreationProperties props = new CoreWebView2CreationProperties();
-            props.UserDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueFishStation", "WebView2");
+            string override_ = FindArg(args, "--userdata=");
+            props.UserDataFolder = override_ != null
+                ? override_
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlueFishStation", "WebView2");
             web.CreationProperties = props;
         }
         catch (Exception ex) { Log("user data folder: " + ex.Message); }
@@ -130,6 +135,15 @@ static class BlueFishStation
         Application.Run(form);
         Log("=== station exit " + exitCode + " ===");
         return exitCode;
+    }
+
+    static string FindArg(string[] args, string prefix)
+    {
+        foreach (string a in args)
+        {
+            if (a.StartsWith(prefix)) return a.Substring(prefix.Length);
+        }
+        return null;
     }
 
     // --url=http://...  (attach to an already running server, used by --selftest)
@@ -226,6 +240,7 @@ static class BlueFishStation
 
     static void SelfTest()
     {
+        Log("dpi: form=" + form.DeviceDpi + " web=" + web.DeviceDpi + " screen=" + Screen.PrimaryScreen.Bounds.Width + "x" + Screen.PrimaryScreen.Bounds.Height);
         string js = "(function(){var s=window.__aurora||{};return 'a='+(!!window.__aurora)+';mark='+document.documentElement.getAttribute('data-aurora')+';efforts='+((s.efforts||[]).length)+';ids='+((s.efforts||[]).map(function(e){return e.id}).join('/'))+';rows='+(s.rows||0)+';radios='+(s.radios||0)+';title='+document.title;})()";
         try
         {

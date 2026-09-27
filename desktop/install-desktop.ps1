@@ -8,16 +8,24 @@ $csc  = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
 # 1) build
 Push-Location $src
-& $csc /nologo /target:winexe /out:BlueFishStation.exe /win32icon:app-icon.ico /reference:Microsoft.Web.WebView2.WinForms.dll /reference:Microsoft.Web.WebView2.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll BlueFishStation.cs
+& $csc /nologo /target:winexe /out:BlueFishStation.exe /win32icon:app-icon.ico /win32manifest:app.manifest /reference:Microsoft.Web.WebView2.WinForms.dll /reference:Microsoft.Web.WebView2.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll BlueFishStation.cs
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'csc failed' }
 Pop-Location
 Write-Host 'compiled BlueFishStation.exe'
 
 # 2) deploy
 New-Item -ItemType Directory -Force -Path $app | Out-Null
+# A running station locks its own exe; say so clearly instead of a raw Copy-Item error.
+$locked = Join-Path $app 'BlueFishStation.exe'
+if (Test-Path $locked) {
+  try { $fs = [IO.File]::Open($locked, 'Open', 'ReadWrite', 'None'); $fs.Close() }
+  catch { Write-Host ''; Write-Host 'The app is running (BlueFishStation.exe is locked).'; Write-Host 'Close the station window, then re-run this script.'; Write-Host ''; exit 2 }
+}
 foreach ($f in @('BlueFishStation.exe','Microsoft.Web.WebView2.WinForms.dll','Microsoft.Web.WebView2.Core.dll','WebView2Loader.dll','app-icon.ico','app-icon-256.png')) {
   Copy-Item (Join-Path $src $f) (Join-Path $app $f) -Force
 }
+# app.config must travel next to the exe as <exe>.config so WinForms reads the DpiAwareness key
+Copy-Item (Join-Path $src 'app.config') (Join-Path $app 'BlueFishStation.exe.config') -Force
 Write-Host ('deployed to ' + $app)
 
 # 3) desktop shortcut (name from code points: U+84DD U+8272 U+5927 U+80A5 U+9C7C U+5DE5 U+4F5C U+7AD9)
@@ -45,3 +53,4 @@ $ic = New-Object System.Drawing.Icon((Join-Path $app 'app-icon.ico'))
 $ic.Dispose()
 'deployed files:'
 Get-ChildItem $app -File | Select-Object Name,Length | Format-Table -AutoSize | Out-String
+

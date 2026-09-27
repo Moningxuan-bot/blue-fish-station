@@ -48,6 +48,23 @@ powershell -File .\desktop\install-desktop.ps1   # 编译 + 部署 + 建桌面�
 | 单实例 | 命名互斥体，重复启动只会提示「已经在运行」 |
 | 日志 | `%LOCALAPPDATA%\BlueFishStation\station.log`（含服务 stdout，排错用） |
 
+命令行参数（一般不用管）：`--url=<带 token 的地址>` 直接连已有实例；`--userdata=<目录>` 指定 WebView2 用户数据目录
+（同一目录不能被两个实例同时使用，所以自测时要用它避开你正开着的窗口）；`--selftest` 见下。
+
+### 高 DPI（必须 Per-Monitor V2）
+
+exe 编译时挂了 `app.manifest`（`dpiAware=true/pm` + `dpiAwareness=PerMonitorV2`）并随 exe 部署 `app.config`
+（`DpiAwareness=PerMonitorV2`）。**缺了这两个，进程就是 DPI 不感知**，Windows 会按 96 DPI 渲染整个窗口
+再位图拉伸到实际分辨率 —— 症状正是「窗口尺寸一变就整体发糊」。
+
+实测这台机器：物理 2560×1600 / 虚拟 1707×1067 = **150% 缩放（DPI 144）**，旧 build 查询结果为 `UNAWARE`。
+加清单后 `Screen.Bounds` 直接报物理像素（2560×1600），说明进程已是 DPI 感知。
+
+### 更新应用
+
+改完 `BlueFishStation.cs` 后，**双击 `desktop\redeploy.cmd`** 即可（编译 + 部署 + 更新快捷方式）。
+若应用正在运行，脚本会明确提示先关掉窗口（exe 被占用无法覆盖）。
+
 无头自测（不开窗口，跑完自己退出，退出码 0 表示 OK）：
 
 ```powershell
