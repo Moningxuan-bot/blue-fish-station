@@ -16,6 +16,7 @@
 | 思考状态行 | `Deep diving...` → 「大肥鱼正在吃你的 TOKEN」，前面带图片图标 |
 | 整站背景 | 换成自定义背景图（+ 柔光罩），替掉刺眼的纯白 |
 | 侧边栏 | 毛玻璃（半透明 + 背景虚化） |
+| 右下角 | **推理强度滑块**：直接读写会话的 `reasoningEffort`（Off / Low / High / Max） |
 
 ## 安装
 
@@ -76,6 +77,29 @@ DSH 的插件分两种：宿主行（Host row）和客户端包（`dsh.client`�
 改不了浏览器里的 DOM/CSS；后者的构建预设 `packages/client/tsdown.client.ts` **没有随 npm 发布**，
 要出可用的客户端 bundle 基本得进仓库。所以外观覆盖走注入是最现实的路。
 正式的宿主插件（提供 `/aurora/*` 路由 + `tapIndex`）是这套原型的下一个形态。
+
+## 推理强度滑块（内部 RPC）
+
+DSH 浏览器端用的是自研 RPC，协议实测如下（`dsh-client-connection` 的 `postJson` + `callUnary`）：
+
+```http
+POST /api/<method>        content-type: application/json
+body   { type: 'client-request', rpcId: <uuid>, method: '<method>', payload: { ... } }
+resp   { type: 'server-response', rpcId, result: { ok: true, value } | { ok: false, error } }
+```
+
+滑块用到两个方法：
+
+| 方法 | payload | 返回 |
+|---|---|---|
+| `session.models` | `{ sessionId }` | `{ current: {provider, model, reasoningEffort?}, groups: [{id, models:[{id, name, reasoning:{defaultEffort, efforts:[{id,name}]}}]}], ... }` |
+| `session.selectModel` | `{ sessionId, provider, model, reasoningEffort? }` | `{ selected }` |
+
+实测本机 `deepseek-v4-flash` 的档位：`off`(Off) / `low`(Low) / `high`(High) / `max`(Max)，默认 `high`。
+
+**`sessionId` 怎么来**：它没有现成的全局来源，所以 `aurora.js` 会 hook `window.fetch`，
+从 App 自己发出的 `/api/session.*` 请求体里学 —— 顺带把每个方法的真实请求体形状也记下来复用。
+注入脚本在 `<body>` 末尾、App 的 module 脚本之前执行，所以这个 hook 一定装得上。
 
 ## 实测的钩子（这是本仓库最值钱的部分）
 
@@ -139,6 +163,9 @@ DSH 的 CSS Module 类名格式是 `<hash>_<localName>`：**hash 会随构建变
 - 只支持浅色主题（所有覆盖都在 `body:not([data-ds-dark-theme])` 作用域内，深色主题保持原样）。
 - 文案是硬编码英文，所以用文本节点替换实现；若 DSH 改了文案，需要同时改 `aurora.js` 里的 `FROM`。
 - 与 DSH 的具体版本强相关（钩子是 `<hash>_<localName>` 后缀 + `data-*` 属性），跨大版本升级后建议重新核对。
+- `/api/<method>` 是 DSH 内部协议，没有稳定性承诺；`session.models` / `session.selectModel` 改名或改
+  payload 形状时，滑块需要同步调整（`aurora.js` 里已把失败原因显示在滑块上，不会静默失败）。
+- 滑块会实时改写**当前会话**的推理强度（和界面里选模型时选 effort 是同一个操作）。
 
 ## License
 
