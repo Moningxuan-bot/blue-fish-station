@@ -1,0 +1,172 @@
+/* aurora.css — DSH 外观覆盖层（原型阶段）
+ * 部署位置：<dsh-web-frontend>/dist/aurora.css，由 dist/index.html 里的 <link> 引入。
+ * 选择器依据：DSH 的 CSS Module 类名格式为 <hash>_<localName>，hash 会变、后缀稳定。
+ * 改完跑一次 sync.ps1，回浏览器按 F5 即可，无需重启 dsh web。
+ */
+
+/* ── 1) LOGO → 自定义图片 ────────────────────────────────────────
+ * 三个落点（都来自实测源码）：
+ *   _brandMark  侧边栏展开态的品牌标（ui-sidebar → renderSlot('sidebar.brand.mark')）
+ *   _railMark   侧边栏折叠成窄条时的同一个插槽
+ *   _fishHitbox 空白会话 Hero 区的大号品牌标（ui-conversation → renderSlot('conversation.hero.brand.mark', {size:34})）
+ * 做法：隐藏原始 FishLogo（内联 SVG），给它的宿主 span 铺背景图。
+ * 图片用 aurora-logo.svg：DSH 静态服务器的 MIME 表只认 .html/.js/.css/.svg/
+ * .json/.map/.webmanifest，raster 图会被发成 application/octet-stream（部分浏览器会拒绝渲染），
+ * 所以把 JPEG base64 内嵌进 SVG，Content-Type 就成了正确的 image/svg+xml。
+ */
+[class*="_brandMark"], [class*="_railMark"], [class*="_fishHitbox"] {
+  background-image: url('/aurora-logo.svg') !important;
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  border-radius: 6px;
+}
+[class*="_brandMark"] svg, [class*="_railMark"] svg, [class*="_fishHitbox"] svg { display: none !important; }
+
+/* 尺寸：原始插槽给的是 24px（侧边栏）/ 34px（Hero）。这里放大到 32 / 44。
+ * 依据实测的宿主布局约束：
+ *   .logoRow       height:60px, padding:8px 0, overflow:hidden  → 内容区 44px 是硬上限
+ *   .brandIdentity height:24px, align-items:center            → 跟着抬到 32px 保持居中
+ *   .headline      grid-template-columns:34px auto auto       → 第一列写死 34px，必须一起改
+ *   折叠态按钮 36x36 → 32px 的 railMark 放得下
+ */
+[class*="_brandMark"], [class*="_railMark"] { display: inline-block; width: 32px; height: 32px; }
+[class*="_brandIdentity"] { height: 32px; }
+[class*="_fishHitbox"] { display: inline-block; width: 44px; height: 44px; }
+/* :has() 保证只改真正含品牌标的那个网格，不误伤别的 _headline */
+[class*="_headline"]:has([class*="_fishHitbox"]) { grid-template-columns: 44px auto auto; }
+
+/* ── 2) 「思考中」状态行前面的图标 ────────────────────────────────
+ * 落点：ChatView 的 TurnStatus（div._turnStatus）：display:inline-flex、height:26px、
+ *       font:var(--dsw-font-s-strong-14)，文字本身带渐变 shimmer 动画。
+ * 为什么用 ::before 而不是往文本里塞字符/元素：这个组件每秒 setState 重渲染，
+ *   往 React 的子节点数组里插元素会打乱它按索引的 diff；伪元素不归 React 管，绝对安全。
+ * 尺寸 1.15em ≈ 16px（父级字号 14px）；父级已有 align-items:center，自动垂直居中。
+ */
+[class*="_turnStatus"]::before {
+  content: '';
+  width: 1.6em;
+  height: 1.6em;
+  flex: none;
+  margin-right: 7px;
+  background: url('/aurora-fish.svg') center / contain no-repeat;
+}
+/* 想再大就必须同时放宽状态行本身 —— 原规则写死 height:26px（父级字号 14px，
+ * 所以 1.6em ≈ 22px 已经接近上限）。去掉下面这行的注释即可解除行高限制：
+ * [class*="_turnStatus"] { height: auto; min-height: 26px; }
+ */
+/* 想用保留白底的版本，把上面那行换成：
+ *   background: url('/aurora-fish-flat.svg') center / contain no-repeat;
+ */
+
+/* ── 3) 品牌字标：deepseek 词标 → 「蓝色大肥鱼」+「工作站」 ──────
+ * 原来这里渲染的是 OfficialBrandName → BrandWordmark（一个内联 SVG 词标），
+ * 不是文本，所以没法用 JS 替换文字；用两个伪元素拼出一句话，并且把原 occupant
+ * 的全部子节点隐藏掉（> * 不区分标签，svg/img/span 都盖得住，fallback 文案同理）。
+ * gap 必须归零：伪元素是 inline-flex 的 flex item，容器自带 gap:6px，不清掉会在
+ * 中间露出一道缝，看起来就不像一句话了。
+ * 宽度核对：侧边栏宽度被 clamp 在 264~420px（ui-layout: clampWidth(sidebar,264,420)），
+ * 扣掉 padding/图标/折叠按钮后留给文字的约 160px，18px 的 8 个汉字≈150px，放得下。
+ */
+[class*="_brandName"] > * { display: none !important; }
+[class*="_brandName"] { gap: 0 !important; white-space: nowrap; }
+[class*="_brandName"]::before {
+  content: '蓝色大肥鱼';
+  color: var(--dsw-static-deepseek-500);      /* = #4176e6，DeepSeek 主色 */
+}
+[class*="_brandName"]::after {
+  content: '工作站';
+  color: var(--dsw-alias-label-primary);      /* 浅色主题 #0f1115（近黑）；深色主题自动转 #f9fafb */
+}
+/* 想要纯黑不跟随主题，把上面那行的 color 换成： #000 */
+
+/* ── 4) 背景 + 毛玻璃（浅色主题） ────────────────────────────────
+ * 现状（实测）：浅色主题下 --dsw-alias-bg-base 和 bg-layer-1/2/3 **全都是纯白**
+ *   （都指向 --dsw-static-neutral-bluish-00），所以整屏发白刺眼；侧边栏是
+ *   --dsw-specific-sidebar-fill = bluish-50（#f9fafb），只比白稍暗一点。
+ * 做法分两步：
+ *   ① body 铺一层柔和渐变当底（暂时代替背景图），不再是纯白；
+ *   ② 把上面那几个表面色令牌换成半透明白，再给三栏框架加 backdrop-filter。
+ * 作用域用 body:not([data-ds-dark-theme]) —— 深色主题是 body[data-ds-dark-theme]，
+ * 这样深色主题保持原样、不会被误伤。
+ * 注意：渐变是平滑的，所以现在 blur 本身看不出多少变化；等背景图进来，
+ * 透出的细节被虚化，毛玻璃质感才会真正显形 —— 结构与令牌现在已经就位。
+ */
+body:not([data-ds-dark-theme]) {
+  /* ① 背景图 + 一层白色柔光罩 + 兜底渐变。
+   * 三层从下到上：兜底渐变 → 图片(cover) → 46% 白纱。
+   * 白纱很关键：图片平均亮度 186，直接铺在浅色主题下对比度太跳、文字会发花；
+   * 罩一层白之后图片变成【底纹】而不是【主角】，同时保住可读性。
+   * 源图在 Pictures 里是 1080x1073 的方图，cover 会裁掉两侧，这是预期的。
+   */
+  background:
+    linear-gradient(rgba(255, 255, 255, .10), rgba(255, 255, 255, .10)),
+    url('/aurora-bg.svg') center center / cover no-repeat,
+    linear-gradient(168deg, #f7f9fd 0%, #eef2fa 52%, #f5f2fb 100%) !important;
+  background-attachment: fixed, fixed, fixed !important;
+
+  /* ② 表面令牌：纯白 → 带一点冷调的浅色。
+   * 刻意【不做成高透明】：内容区/卡片/输入框都是要读字的地方，多层半透明互相叠加
+   * 会变成奶白色，对比度一掉就看不清界面（上一版就是栽在这里）。
+   * 真正像玻璃的只有侧边栏，见下面 ③。等背景图进来再考虑把内容区的 alpha 往下调。
+   */
+  /* 有背景图了，内容区可以再透一点；但每层都留足余量，避免又叠成奶白。
+   * 有效可见度 ≈ (1 - 0.46 白纱) × (1 - 该层 alpha)：
+   *   内容区 .72 → 约 15% 图可见；侧边栏 .45 → 约 30% 且带模糊，玻璃感最明显。
+   */
+  /* 【关键认识】--dsw-alias-bg-base 不只用于对话卡片：AppFrame 自己就是
+   * background: var(--dsw-alias-bg-base)（.pI_x6G_frame），它盖在整个 app 上，
+   * 所以它是【全局调暗器】；ConversationRoot 又用同一个令牌叠了第二层。
+   * 图片要一路穿过：body图 → frame(.40) → 对话根(.40) → 卡片(n)。
+   * 侧边栏更糟：--dsw-specific-sidebar-fill 被用了两次（列 + 侧边栏根），三层叠加。
+   * 所以这些值必须比直觉更低，否则图就没了 —— 这就是上一版【图看不见】的真正原因。
+   */
+  --dsw-alias-bg-base:   rgba(255, 255, 255, .40) !important;
+  --dsw-alias-bg-layer-1: rgba(255, 255, 255, .62) !important;
+  --dsw-alias-bg-layer-2: rgba(255, 255, 255, .70) !important;
+  --dsw-alias-bg-layer-3: rgba(255, 255, 255, .78) !important;
+  --dsw-alias-bg-overlay: rgba(246, 248, 253, .82) !important;
+  --dsw-specific-input-major: rgba(255, 255, 255, .72) !important;
+  --dsw-specific-login-input: rgba(255, 255, 255, .72) !important;
+  --dsw-specific-selector:    rgba(255, 255, 255, .72) !important;
+  --dsw-specific-tip:         rgba(255, 255, 255, .78) !important;
+  --dsw-specific-bubble:        rgba(238, 244, 255, .70) !important;
+  --dsw-specific-bubble-highlight: rgba(214, 228, 255, .78) !important;
+
+  /* 侧边栏：这个令牌被用两次（列 + 侧边栏根），所以给得最低 */
+  --dsw-specific-sidebar-fill: rgba(255, 255, 255, .16) !important;
+}
+
+/* ③ 毛玻璃：只给侧边栏，而且必须用 ::before 承载，不能直接加在列上。
+ *
+ * 【踩坑记录 · 两条，都很值钱】
+ * 坑 1：写成 [class*="_frame"] > * 想一次覆盖三栏 —— 但 _frame 的直接子元素里还有
+ *   铺满全屏的层（拖拽手柄 / overlay），backdrop-filter 一上去整个界面都被虚化。
+ * 坑 2：把 backdrop-filter 直接加在 [class*="_sidebarCol"] 上 —— 设置面板被挤进侧边栏。
+ *   原因：按 CSS Filter Effects 规范，filter/backdrop-filter 不是 none 时，元素会成为
+ *   其后代中 position:fixed 元素的包含块。而设置面板（见 ui-settings-general：
+ *   .overlay{position:fixed;inset:0;z-index:1000}）是挂在侧边栏设置入口下面的，
+ *   于是它的 fixed 不再相对视口，而是相对侧边栏那一列 → 界面的 UI 被压进 264px 宽的
+ *   侧边栏里。
+ * 解法：把模糊放到 ::before 伪元素上。伪元素没有后代，因此不会给任何 fixed 元素
+ *   当包含块。
+ *
+ * 坑 3：上一版还加了 isolation:isolate —— 设置面板尺寸恢复正常了，但【跑到玻璃后面
+ *   点不到】。原因：isolation 会创建层叠上下文，面板那个 z-index:1000 的 fixed 层
+ *   被关在侧边栏的层叠上下文里出不来，后面的对话列就盖在它上面。
+ *   结论：凡是会给元素创建【层叠上下文】或【包含块】的属性（isolation / filter /
+ *   transform / backdrop-filter / will-change / contain），都不能加在侧边栏这类
+ *   容器上 —— 因为别人的全屏 fixed 层正挂在它的 DOM 子树里。
+ *   现在列上只留 position:relative：它既不创建层叠上下文，也不当 fixed 的包含块，
+ *   只是给 ::before 提供定位参照，是纯安全的那个属性。
+ */
+[class*="_sidebarCol"] { position: relative; }
+[class*="_sidebarCol"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  backdrop-filter: blur(14px) saturate(1.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+}
