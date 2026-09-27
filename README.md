@@ -302,7 +302,9 @@ DSH 的模型菜单在 `document` 上挂了 `mousedown` 的「点在菜单外就
 | 文案 `Deep diving...` | ❌ 变成本地化 key（`chat.deepDiving` / `chat.deepDivingFor`，1 秒后带时长）；✅ 已改成**语义替换 + 全局兜底** |
 | 品牌标 `_brandMark` / Hero `_fishHitbox` / 轨迹 `_thinkingToggle` | ✅ 都还在 |
 | 模型菜单 `role="menuitemradio"` 与 `effortChoices` 结构 | ✅ 原样 |
-| RPC `session.models` / `session.selectModel` | ✅ 原样 |
+| RPC **读档位** `session.models` | ❌ 改名 `session/modelCatalog`（**斜杠**路径、**无参数**），返回里 `current` → **`default`** |
+| RPC **信封** | ❌ 多了一层：`payload: { args: <按描述符 wire 名的对象> }`（旧版是裸 payload）。例：`session/selectModel` → `args:{request:{...}}`、`session/list` → `args:{_request:{}}`、`session/modelCatalog` → `args:{}` |
+| RPC `session.selectModel` | ⚠️ 方法名没变，但路径与信封变了：`POST /api/session/selectModel` + `args.request` |
 | frontend-static 的 MIME 表 | ✅ 一模一样（图片仍需包进 SVG） |
 
 ## 已知限制

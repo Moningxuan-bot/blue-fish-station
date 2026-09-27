@@ -105,12 +105,52 @@
    * 与其硬编码猜测，主路径是【从 App 自己的流量里学】：hook fetch 时记下它用过的 method
    * 字符串与目录响应值，优先复用；候选列表只用于首次打开菜单前的兜底。
    */
+  /* 实测（0.1.7-rc.2，直接打服务端验证过）：
+   *   POST /api/<namespace>/<method>    ← 斜杠！旧版是点号（session.models）
+   *   payload: { args: <对象> }         ← 多了一层 args 信封；旧版是裸 payload
+   *   args 里的键名来自接口描述符的 wire 名：
+   *     session/modelCatalog（0 参数）→ args: {}
+   *     session/selectModel（1 参数 request）→ args: { request: {...} }
+   *     session/list（1 参数 _request）→ args: { _request: {} }
+   * newStyle: false 表示旧版裸 payload 形式，作为回退保留。
+   */
   const EP = {
-    catalog: ['session.modelCatalog', 'session.models'],
-    select: ['session.selectModel', 'session/selectModel'],
-    list: ['session.list', 'session/list'],
+    catalog: [
+      { method: 'session/modelCatalog', args: () => ({}) },
+      { method: 'session.models', args: (p) => p, newStyle: false },
+      { method: 'session.modelCatalog', args: () => ({}) },
+    ],
+    select: [
+      { method: 'session/selectModel', args: (p) => ({ request: p }) },
+      { method: 'session.selectModel', args: (p) => p, newStyle: false },
+    ],
+    list: [
+      { method: 'session/list', args: () => ({ _request: {} }) },
+      { method: 'session.list', args: (p) => p, newStyle: false },
+    ],
   }
-  const learned = { catalog: null, select: null, list: null, lastCatalog: null }
+  const learned = { catalog: null, select: null, list: null, lastCatalog: null, newStyle: null }
+
+  /* 在新旧两种信封里挖 sessionId */
+  const findSessionId = (p) => {
+    if (!p || typeof p !== 'object') return null
+    if (typeof p.sessionId === 'string') return p.sessionId
+    const a = p.args
+    if (!a || typeof a !== 'object') return null
+    if (typeof a.sessionId === 'string') return a.sessionId
+    for (const k of ['request', '_request']) {
+      const inner = a[k]
+      if (inner && typeof inner.sessionId === 'string') return inner.sessionId
+    }
+    return null
+  }
+
+  /* 从方法名推断新版 args 里的参数键名（描述符的 wire 名） */
+  const inferArgs = (method, p) => {
+    if (/selectModel/.test(method)) return { request: p }
+    if (/[./]list$/.test(method)) return { _request: {} }
+    return {}
+  }
   const seen = { sessionId: null, payload: {} }
 
   window.fetch = function (input, init) {
@@ -127,10 +167,15 @@
           if (/selectModel/.test(method)) learned.select = method
           else if (/modelCatalog|(^|\.)models$/.test(method)) learned.catalog = method
           if (/^session[./]list$/.test(method)) learned.list = method
+          /* 顺便学信封样式：新版 payload 里有 args 这一层，旧版没有 */
+          if (p && typeof p === 'object') learned.newStyle = Object.prototype.hasOwnProperty.call(p, 'args')
         }
         if (p) {
           seen.payload[m[1]] = p
-          if (p.sessionId && p.sessionId !== seen.sessionId) onSession(p.sessionId)
+          /* 新版把参数包在 payload.args 里（args.request.sessionId 等），旧版直接在 payload 上；
+           * 都要能找到 sessionId，否则会话兜底会白跑一趟。 */
+          const sid = findSessionId(p)
+          if (sid && sid !== seen.sessionId) onSession(sid)
         }
       }
     } catch (e) { /* 观测失败绝不影响 App 自己的请求 */ }
@@ -151,8 +196,11 @@
     return res
   }
 
-  const rpc = async (method, payload) => {
+  const rpc = async (method, args, newStyle) => {
     const rpcId = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random()
+    /* 未指定样式时，优先用从 App 流量里学到的 */
+    const wrap = newStyle === undefined ? learned.newStyle !== false : newStyle !== false
+    const payload = wrap ? { args: args } : args
     const res = await rawFetch('/api/' + method, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -166,11 +214,17 @@
   }
 
   /* 依次试候选端点，第一个成功的就是它；优先用从 App 流量里学到的那个名字 */
-  const rpcAny = async (key, payload) => {
-    const list = learned[key] ? [learned[key]].concat(EP[key]) : EP[key]
+  const rpcAny = async (key, p) => {
+    const tries = []
+    if (learned[key]) {
+      /* 学到过端点：先按学到的用（信封样式也按学到的），再兜底另一种样式 */
+      tries.push({ method: learned[key], args: (x) => inferArgs(learned[key], x) })
+      tries.push({ method: learned[key], args: (x) => inferArgs(learned[key], x), newStyle: false })
+    }
+    for (const e of EP[key]) tries.push(e)
     let lastErr = null
-    for (const m of list) {
-      try { return await rpc(m, payload) } catch (e) { lastErr = e }
+    for (const t of tries) {
+      try { return await rpc(t.method, t.args(p), t.newStyle) } catch (e) { lastErr = e }
     }
     throw lastErr || new Error('no endpoint: ' + key)
   }
