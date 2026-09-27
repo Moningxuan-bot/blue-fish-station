@@ -20,6 +20,45 @@
 | 思考强度面板 | **档位立绘**：四个档位各一张角色图，当前档全亮、其余压暗 |
 | 拖动滑块时 | **角色跑动**：12 帧跑动图骑在圆点上跟着手跑；**流光**从轨道左→右扫过 |
 | 松手定档 | 跑动角色退场，档位立绘重新出现并停在当前档 |
+| **桌面应用** | 「蓝色大肥鱼工作站」：双击即启动（见下节） |
+
+## 桌面应用：蓝色大肥鱼工作站
+
+`desktop\` 下是一个真正的 Windows 桌面外壳（WinForms + WebView2，C# 编译成单个 EXE）：
+双击桌面快捷方式 → 它自己拉起一个 DSH 服务 → 打开一个**没有浏览器界面**的应用窗口（自定义图标与标题）。
+
+```powershell
+powershell -File .\desktop\install-desktop.ps1   # 编译 + 部署 + 建桌面快捷方式
+```
+
+它会：
+
+1. 用 .NET Framework 自带的 `csc` 编译 `BlueFishStation.cs`（源码纯 ASCII，中文用 `\u` 转义，避免编码坑）；
+2. 把 `BlueFishStation.exe` + WebView2 三个依赖 + 图标复制到 `%LOCALAPPDATA%\BlueFishStation\`；
+3. 在桌面创建「蓝色大肥鱼工作站.lnk」（名字由码点拼出，脚本本身仍是纯 ASCII）。
+
+运行行为：
+
+| 行为 | 说明 |
+|---|---|
+| 启动服务 | `cmd /c dsh web --port 0 --no-open` → **随机端口**，不会和终端里那个实例抢端口 |
+| 取认证 URL | 读子进程 stdout，按 `http://127.0.0.1:\d+/\?token=...` 抓出带 token 的地址（0.1.7 起 `/api` 与首页都要过浏览器信任闸门） |
+| 窗口 | WebView2 全屏填充，`form.Text` = 蓝色大肥鱼工作站，窗口/任务栏图标来自 `app-icon-256.png` |
+| 退出 | 关窗时 `taskkill /pid <pid> /T /F` 把整个服务进程树收掉 |
+| 单实例 | 命名互斥体，重复启动只会提示「已经在运行」 |
+| 日志 | `%LOCALAPPDATA%\BlueFishStation\station.log`（含服务 stdout，排错用） |
+
+无头自测（不开窗口，跑完自己退出，退出码 0 表示 OK）：
+
+```powershell
+& "$env:LOCALAPPDATA\BlueFishStation\BlueFishStation.exe" --selftest
+```
+它会在 WebView2 里执行一段 JS，确认覆盖层真的生效：`a=true;mark=on;efforts=4;ids=off/low/high/max`。
+
+关于图标：源图（`Pictures\93a81a91a9f8bf70556128e5180c1918400820618.png`，1378×1382，**本身就是透明底**）
+由 `desktop\make-icons.ps1` 生成 6 个尺寸（256/128/64/48/32/16）的 `app-icon.ico` 与 `app-icon-256.png`。
+ICA 用的是 PNG 压缩条目（Explorer 支持），但 **.NET 的 `Icon` 类读不了这种条目**（`ToBitmap()` 会抛异常），
+所以窗口图标是运行时从 `app-icon-256.png` 用 `GetHicon()` 加载的 —— 这一点踩过，写在代码注释里了。
 
 ## 安装
 

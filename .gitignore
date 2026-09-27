@@ -9,6 +9,10 @@ run.svg
 # 分析/抓取临时目录（不属于本项目）
 _probe/
 
+# 桌面应用的运行日志与 WebView2 用户数据（缓存/配置，运行时会生成）
+desktop/station.log
+*.WebView2/
+
 # Windows
 Thumbs.db
 desktop.ini
