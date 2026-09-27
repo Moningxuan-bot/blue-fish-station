@@ -19,7 +19,7 @@
  *   v4 的结构性修法（不是打补丁，是换驱动方式）：
  *     ① **定位改由 250ms 定时器驱动**，Observer 只做文案替换、绝不写定位相关的 DOM。
  *        定时器不会被自己的写入触发，所以自激回路在结构上就不可能出现。
- *     ② place() 先算签名，位置没变就不写 DOM；隐藏行用行内 visibility（React 会覆盖 className，
+ *     ② place() 先算签名，位置没变就不写 DOM；隐藏行用行内 opacity（React 会覆盖 className，
  *        但不会碰 style），并且只在行集合变化时才重新处理。
  *     ③ 熔断兜底：一秒内调度超过 60 次，或 place 抛错，就彻底停用浮层并恢复原生行。
  *
@@ -44,9 +44,32 @@
    * 三层都没命中时 warn 一次，升级后一眼就能定位。
    */
   const LABEL = '大肥鱼正在吃你的 TOKEN'
-  const CONTAINERS = ['[data-chat-running]', '[class*="_turnStatus"]', '[class*="_runningText"]', '[class*="_running"]']
-  /* 认得出“这就是运行文案”的前缀；上游换词时在这里加一条即可 */
-  const COPY_PATTERNS = [/^deep diving/i, /^thinking/i, /^思考中/, /^正在思考/, /^深度思考/, /^深度潜水/]
+  const CONTAINERS = ['[data-chat-running]', '[role="status"]', '[class*="_turnStatus"]', '[class*="_runningText"]', '[class*="_running"]']
+  /* 认得出“这就是运行文案”的前缀；上游换词时在这里加一条即可。
+   * ⚠ 这里是【最容易自己咬自己】的地方：我们给最高档位的中文说明正是「深度思考」，
+   *   而运行状态的中文文案很可能是「深度思考中」。所以裸的 /^深度思考/ 绝对不能留 ——
+   *   模型菜单的档位标签一被 React 重新渲染，就会被当成运行文案替换掉（踩过）。
+   *   凡是和我们 CAPTION 里任何一个中文说明重名的前缀，都必须带后缀限定或不收。 */
+  const COPY_PATTERNS = [
+    /^deep diving/i,
+    /^thinking/i,
+    /^思考中/,
+    /^正在思考/,
+    /^正在深度思考/,
+    /^深度思考(中|…|\.\.\.)/,   /* 必须带后缀：「深度思考中」「深度思考…」才认 */
+    /^深度潜水/,
+  ]
+  /* 全局兜底时绝不碰的区域：我们自己的浮层、菜单里的按钮/选项、表单控件。
+   * 档位标签（如「深度思考」）就长在这些地方，误替换=用户看得见的错。 */
+  const PROTECTED = ['#aurora-effort', '[role="menu"]', '[role="menuitemradio"]', '[role="listbox"]', '[role="option"]', 'button', 'input', 'textarea', 'select']
+  const CAPTIONS = ['不想思考', '开始思考', '认真思考', '深度思考']
+  const protectedText = (node) => {
+    const el = node && node.parentElement
+    if (!el) return true
+    if (CAPTIONS.indexOf((node.nodeValue || '').trim()) >= 0) return true
+    for (const sel of PROTECTED) { if (el.closest(sel)) return true }
+    return false
+  }
   const CLOCK_RE = /^[\d\s:：.·hms分秒]+$/i
   const isClock = (t) => CLOCK_RE.test(t)
   const isCopy = (t) => COPY_PATTERNS.some((re) => re.test(t))
@@ -68,10 +91,14 @@
       const host = el.closest ? el.closest(sel) : null
       if (host) { swapInside(host); return }
     }
+    /* 全局兜底（容器钩子全失配时才需要）：只认“看起来就是运行文案”的文本，
+     * 并且绝不碰菜单/按钮/表单/我们自己的浮层。 */
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
     for (let n; (n = walker.nextNode());) {
       const t = (n.nodeValue || '').trim()
-      if (t && t !== LABEL && !isClock(t) && isCopy(t)) n.nodeValue = n.nodeValue.replace(t, LABEL)
+      if (!t || t === LABEL || isClock(t) || !isCopy(t)) continue
+      if (protectedText(n)) continue
+      n.nodeValue = n.nodeValue.replace(t, LABEL)
     }
   }
 
@@ -90,7 +117,7 @@
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
     for (let n; (n = walker.nextNode());) {
       const t = (n.nodeValue || '').trim()
-      if (t && isCopy(t)) {
+      if (t && isCopy(t) && !protectedText(n)) {
         n.nodeValue = n.nodeValue.replace(t, LABEL)
         hookWarned = true
         console.warn('[aurora] 运行状态容器钩子全都没匹配上，已用全局文本兜底。上游可能改了结构，请把这条日志发我。命中文本: ' + t)
@@ -98,6 +125,21 @@
       }
     }
   }
+
+  /* ── 临时诊断通道 ───────────────────────────────────────────────
+   * 把状态变化 POST 到本机 127.0.0.1:8799（作者开的接收端），这样“闪一下就关”的过程
+   * 不用你手抄控制台。接收端没开就静默失败，绝不影响页面。
+   * 定位完之后这段可以整段删掉。
+   */
+  const BEACON = 'http://127.0.0.1:8799/aurora'
+  const beacon = (text) => {
+    try { rawFetch(BEACON, { method: 'POST', mode: 'no-cors', body: String(text).slice(0, 900) }) } catch (e) { /* 忽略 */ }
+  }
+  window.addEventListener('error', (e) => beacon('PAGE-ERROR ' + (e && e.message) + ' @ ' + (e && e.filename) + ':' + (e && e.lineno)))
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason
+    beacon('PAGE-REJECT ' + ((r && r.message) || String(r)))
+  })
 
   /* ─────────── 2) RPC ───────────
    * 端点命名在 0.1.7-rc.2 变了：读档位从 session.models 改成 session.modelCatalog（无参数），
@@ -232,7 +274,10 @@
   /* ─────────── 3) 状态 ─────────── */
   const st = {
     sessionId: null, provider: null, model: null, efforts: [], index: 0,
-    busy: false, note: '', rows: 0, placed: false, disabled: false, places: 0
+    busy: false, note: '', rows: 0, placed: false, disabled: false, places: 0,
+    /* 诊断用：radios = 文档里 menuitemradio 总数；matched = 通过我们四重校验的行数；
+     * flash = 浮层显示/隐藏的切换次数（“闪一下”会在这里累加） */
+    radios: 0, matched: 0, flash: 0
   }
   window.__aurora = st
 
@@ -258,17 +303,29 @@
         if (g.id !== st.provider) return
         ;(g.models || []).forEach((m) => { if (m.id === st.model) reasoning = m.reasoning })
       })
-      st.efforts = (reasoning && reasoning.efforts) || []
+      /* 防闪：同一次会话里 App 可能发出不止一次目录请求（比如打开菜单时的 reload），
+       * 其中某次若没带上 reasoning（局部/过滤过的目录），直接覆盖就会让滑块闪一下消失。
+       * 所以只有在「模型确实变了」或「这次真的拿到了档位」时才替换。 */
+      const nextEfforts = (reasoning && reasoning.efforts) || []
+      const sameModel = cur.provider === st.provider && cur.model === st.model
+      if (nextEfforts.length === 0 && st.efforts.length >= 2 && sameModel) {
+        console.log('[aurora] 本次目录没给出 efforts，保留上次档位（' + st.efforts.length + ' 档）')
+      } else {
+        st.efforts = nextEfforts
+      }
       const eff = cur.reasoningEffort || (reasoning && reasoning.defaultEffort)
       const idx = st.efforts.findIndex((x) => x.id === eff)
       st.index = idx < 0 ? 0 : idx
       st.note = st.efforts.length >= 2 ? '' : '当前模型未提供推理强度档位'
       console.log('[aurora] efforts', st.efforts.map((e) => e.id).join('/'), 'current=' + eff,
-        'via=' + (learned.lastCatalog ? 'app-cache' : (learned.catalog || EP.catalog[0])))
+        'via=' + (learned.lastCatalog ? 'app-cache' : (learned.catalog || EP.catalog[0].method)))
+      beacon('readState ok efforts=' + st.efforts.length + ' [' + st.efforts.map((e) => e.id).join('/') + ']' +
+        ' cur=' + st.provider + '/' + st.model + '/' + eff + ' via=' + (learned.lastCatalog ? 'app-cache' : (learned.catalog || EP.catalog[0].method)))
     } catch (e) {
       st.efforts = []
       st.note = '读取失败: ' + (e && e.message ? e.message : e)
       console.warn('[aurora] modelCatalog failed', e)
+      beacon('readState FAIL ' + (e && e.message ? e.message : e))
     }
     render()
   }
@@ -602,9 +659,45 @@
      * DSH 的模型菜单在 document 上挂了 mousedown 的 closeOutside（点在菜单外就关闭），
      * 我们的浮层在菜单的 DOM 之外 —— 不挡住的话，按下滑块 = 点了菜单外面 = 菜单立刻关闭，
      * 浮层在 250ms 轮询里被隐藏，拖动还没结束就没了：表现就是【只能点、不能拖】。 */
-    const stop = (e) => e.stopPropagation()
+    box.setAttribute('tabindex', '-1')   /* 让浮层本身可聚焦：点空白处焦点也不会掉到 body */
+    const stop = (e) => {
+      e.stopPropagation()
+      /* 焦点必须留在浮层内：一旦落到 body，应用的 onBlur 会判定“跑出菜单”并 close()。
+       * 这里先兜住焦点，随后浏览器按默认行为把焦点交给 range（仍在我们浮层内）。 */
+      try { if (!box.contains(document.activeElement)) box.focus({ preventScroll: true }) } catch (err) { /* 忽略 */ }
+    }
     for (const type of ['mousedown', 'pointerdown', 'touchstart', 'click']) {
       box.addEventListener(type, stop)
+    }
+    /* 再加一道【捕获阶段】的屏蔽（只需加一次）。
+     * 应用的 closeOutside 挂在 document 的 mousedown 上：元素级 stopPropagation 只有在事件
+     * 冒泡到我们元素时才生效，如果应用用捕获阶段监听、或换了别的时机，就拦不住 → 菜单被关掉、
+     * 滑块“闪一下就没了”。在 document 捕获阶段先吞掉，target 落在我们浮层里的一律不放行。
+     * 只拦 mousedown / click：pointerdown 必须留给元素级监听，否则 range 的拖动状态机会失效。 */
+    if (!window.__auroraShield) {
+      window.__auroraShield = true
+      for (const type of ['mousedown', 'click']) {
+        document.addEventListener(type, (e) => {
+          if (panel && e.target && panel.box.contains(e.target)) e.stopPropagation()
+        }, true)
+      }
+      /* 焦点屏蔽（0.1.7 的 onBlur 关闭路径）：
+       * 新版菜单用 React onBlur 关闭 —— 译成原生就是 focusout 的冒泡：
+       *   const onBlur = (e) => { if (relatedTarget 在 root/menu 内) return; close() }
+       * 我们的 range 一被按下就会获得焦点（焦点随即离开菜单）→ onBlur 判定“跑出菜单”→ close()，
+       * 表现就是【一按滑块菜单就关】。在 document 捕获阶段吞掉“焦点去向是我们的浮层”的 focusout，
+       * React 就看不到这次离开；range 的默认行为（拖动、键盘）都不受影响。 */
+      document.addEventListener('focusout', (e) => {
+        const to = e.relatedTarget
+        if (panel && to && panel.box.contains(to)) {
+          e.stopPropagation()
+          beacon('shielded focusout -> ' + (to.tagName || '?') + '（菜单本会因此关闭）')
+        }
+      }, true)
+      /* 反过来也要挡：从菜单外点回浮层时的 focusin 不必处理，但记一笔便于排查 */
+      document.addEventListener('focusin', (e) => {
+        if (panel && e.target && panel.box.contains(e.target)) beacon('focusin panel ' + (e.target.tagName || '?'))
+      }, true)
     }
 
     range.addEventListener('pointerdown', () => {
@@ -688,7 +781,7 @@
 
   const unhideRows = () => {
     for (const el of hiddenRows) {
-      try { el.style.removeProperty('visibility'); el.removeAttribute('aria-hidden') } catch (e) {}
+      try { el.style.removeProperty('opacity'); el.style.removeProperty('pointer-events') } catch (e) {}
     }
     hiddenRows = []
   }
@@ -708,9 +801,11 @@
   /* 找原生档位行：模型列表也是 menuitemradio（带 title=模型名），必须三重校验才敢动 */
   const nativeRows = () => {
     const names = st.efforts.map((e) => e.name)
+    const all = document.querySelectorAll('[role="menuitemradio"]')
+    st.radios = all.length
+    st.matched = 0
     if (names.length < 2) return []
     const matched = new Map()
-    const all = document.querySelectorAll('[role="menuitemradio"]')
     for (const el of all) {
       if (el.hasAttribute('title')) continue
       if (el.getClientRects().length === 0) continue
@@ -718,20 +813,45 @@
       const hit = names.find((n) => txt === n || txt.indexOf(n) === 0)
       if (hit && !matched.has(hit)) matched.set(hit, el)
     }
+    st.matched = matched.size
     if (matched.size !== names.length) return []
     return names.map((n) => matched.get(n))
+  }
+
+  /* 菜单自己的状态：触发器的 aria-expanded，用来判断“菜单被关了”还是“只有我们的浮层被藏了” */
+  const menuState = () => {
+    const ts = document.querySelectorAll('[aria-haspopup="menu"][aria-expanded]')
+    let openCount = 0
+    for (const t of ts) if (t.getAttribute('aria-expanded') === 'true') openCount++
+    const rows = document.querySelectorAll('[role="menuitemradio"]').length
+    return 'triggers=' + ts.length + ' open=' + openCount + ' radios=' + rows
+  }
+
+  /* 状态变化时打一行，用来回放“闪一下”的过程（相同状态不重复打） */
+  let lastPlaceLog = ''
+  const logPlace = (rows, visible) => {
+    const line = 'radios=' + st.radios + ' matched=' + st.matched + ' rows=' + rows.length +
+      ' efforts=' + st.efforts.length + ' visible=' + visible + ' flash=' + st.flash +
+      (st.note ? ' note=' + st.note : '')
+    if (line !== lastPlaceLog) {
+      lastPlaceLog = line
+      console.log('[aurora] ' + line)
+      beacon('place ' + line + ' | ' + menuState())
+    }
   }
 
   const place = () => {
     if (st.disabled) return
     try {
       const rows = nativeRows()
+      if ((rows.length > 0) !== st.placed) st.flash++   /* 计数：每闪一次 +1 */
       st.rows = rows.length
       if (rows.length === 0) {
         unhideRows()
         if (panel) panel.box.style.display = 'none'
         st.placed = false
         lastSig = ''
+        logPlace(rows, false)
         return
       }
       let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity
@@ -749,8 +869,15 @@
         const same = hiddenRows.length === rows.length && hiddenRows.every((el, i) => el === rows[i])
         if (!same) { unhideRows(); hiddenRows = rows.slice() }
         for (const el of rows) {
-          el.style.setProperty('visibility', 'hidden', 'important')
-          el.setAttribute('aria-hidden', 'true')
+          /* 关键：用 opacity:0 而不是 visibility:hidden！
+           * 0.1.7 的菜单新增了 onBlur 关闭：
+           *   const onBlur = (e) => { if (relatedTarget 在 root/menu 内) return; close() }
+           * 而切到档位面板时，应用会 focus 那一行被选中的档位（paneFocus 的 'drill' 分支）。
+           * visibility:hidden 会让元素【不可聚焦】→ focus 落回 body → onBlur 认为焦点跑出菜单 → close()，
+           * 于是「滑刚出现就被关掉」。opacity:0 的元素依然可聚焦 ✔ 也不改变布局 ✔。
+           * pointer-events:none 让点击穿透到菜单本身（仍然是菜单内的 mousedown，不会触发 closeOutside）。 */
+          el.style.setProperty('opacity', '0', 'important')
+          el.style.setProperty('pointer-events', 'none', 'important')
         }
         /* 面板不再强行塞进原生行那块矩形：给它一个最小宽度（4 个中文档位名要一行放得下），
          * 以原生行区域为中心摆放，高度自适应后垂直居中。所以它会比菜单略宽一点。 */
@@ -767,6 +894,7 @@
       }
       st.placed = true
       render()
+      logPlace(rows, true)
       if (dragging) moveRunner()   /* 拖动中若面板位置变了，角色跟着重新贴合 */
     } catch (e) {
       disableOverlay('place 抛错: ' + (e && e.message ? e.message : e))
@@ -811,6 +939,7 @@
     tickTimer = setInterval(() => { if (!st.disabled) place() }, 250)
     setInterval(selfCheck, 5000)   /* 文案钩子自检，仅在上次扫描后文档有变化时才真的扫 */
     document.documentElement.dataset.aurora = 'on'
+    beacon('armed href=' + location.href + ' ua=' + navigator.userAgent.slice(-30))
     bootstrapSession()
     console.log('[aurora] armed: thinking label + in-menu effort slider')
   }
