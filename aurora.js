@@ -32,19 +32,29 @@
 
   /* ─────────── 1) 运行状态文案（抗升级版） ───────────
    * v1 把文案和类名都写死了（FROM='Deep diving...' + [class*="_turnStatus"]），上游一改就【静默失效】。
-   * 实测新版（dsh-v0.1.7-rc.2）：组件从 ui-conversation 搬到 ui-chat/RunningStatus.tsx，
-   *   类名 _turnStatus → _running，文案变成本地化 key（chat.deepDiving / chat.deepDivingFor），
-   *   并且 1 秒后会带上时长（'Deep diving for 12s'）。写死字符串的匹配全废。
+   * 实测新版（0.1.7-rc.2 产物，dsh-client-ui-chat）：文案挂在
+   *   <button data-turn-process=...><span class={css.label}>{label}</span></button>
+   *   的 label 里，同一个按钮内还有工具调用计数等内容（所以只换第一个文本节点）。
+   *   该按钮在回合结束后【依然存在】（文案变「已完成工作」），所以替换必须带语义判断。
+   *   本地化 key：chat.deepDiving = 「深度求索中」/ 'Deep diving...'，
+   *   message.turnProcess.deepDivingFor = 「深度求索中，用时{duration}」/ 'Deep diving for {duration}'。
+   *   （master 源码里的 data-chat-running / RunningStatus.tsx 在 rc.2 产物里【不存在】。）
    * 现在三层兜底：
-   *   A. 容器钩子按优先级试：data-chat-running → _turnStatus → _runningText → _running
-   *      （data-* 属性是上游最稳定的东西，优先用它）
-   *   B. 容器内【语义替换】：不比对原文，把非“计时器样式”的文本统统换成我们的文案 ——
-   *      上游改文案、加时长都不影响；计时器（如 '1m 20s'）会被识别并保留
-   *   C. 全局兜底：整篇文档里“看起来就是运行文案”的文本也换掉（容器改名时也能救回来）
+   *   A. 容器钩子按优先级试：data-turn-process → data-chat-running → _turnStatus → _runningText → _running
+   *   B. 容器内第 1 个【像运行文案】的文本节点替换（保留「，用时12秒」尾巴，计时器继续走）
+   *   C. 全局兜底：整篇文档里“看起来就是运行文案”的文本也换（容器改名时也能救回来），
+   *      但绝不碰 PROTECTED（我们自己的浮层、菜单、按钮、表单、role=status 无障碍节点）
    * 三层都没命中时 warn 一次，升级后一眼就能定位。
    */
   const LABEL = '大肥鱼正在吃你的 TOKEN'
-  const CONTAINERS = ['[data-chat-running]', '[role="status"]', '[class*="_turnStatus"]', '[class*="_runningText"]', '[class*="_running"]']
+  /* 容器钩子，按稳定性排序（实测 0.1.7-rc.2 的产物）：
+   *   [data-turn-process]   ← 现在真正装着文案的那个 <button>（data-* 最稳）
+   *   [data-chat-running]   ← 只在 master 源码里有，rc.2 产物里不存在，留着当保险
+   *   其余是历史类名（CSS Module 的 _xxx，升级可能改名）
+   * 注意不要再放 [role="status"]：那个节点是【视觉隐藏】的无障碍通告，改了也看不见，
+   * 反而可能命中别的 role=status（弹条等）。
+   */
+  const CONTAINERS = ['[data-turn-process]', '[data-chat-running]', '[class*="_turnStatus"]', '[class*="_runningText"]', '[class*="_running"]']
   /* 认得出“这就是运行文案”的前缀；上游换词时在这里加一条即可。
    * ⚠ 这里是【最容易自己咬自己】的地方：我们给最高档位的中文说明正是「深度思考」，
    *   而运行状态的中文文案很可能是「深度思考中」。所以裸的 /^深度思考/ 绝对不能留 ——
@@ -53,6 +63,7 @@
   const COPY_PATTERNS = [
     /^deep diving/i,
     /^thinking/i,
+    /^深度求索/,        /* 0.1.7-rc.2 的中文文案：深度求索中 / 深度求索中，用时12秒 */
     /^思考中/,
     /^正在思考/,
     /^正在深度思考/,
@@ -61,7 +72,7 @@
   ]
   /* 全局兜底时绝不碰的区域：我们自己的浮层、菜单里的按钮/选项、表单控件。
    * 档位标签（如「深度思考」）就长在这些地方，误替换=用户看得见的错。 */
-  const PROTECTED = ['#aurora-effort', '[role="menu"]', '[role="menuitemradio"]', '[role="listbox"]', '[role="option"]', 'button', 'input', 'textarea', 'select']
+  const PROTECTED = ['#aurora-effort', '[role="status"]', '[role="menu"]', '[role="menuitemradio"]', '[role="listbox"]', '[role="option"]', 'button', 'input', 'textarea', 'select']
   const CAPTIONS = ['不想思考', '开始思考', '认真思考', '深度思考']
   const protectedText = (node) => {
     const el = node && node.parentElement
@@ -74,12 +85,27 @@
   const isClock = (t) => CLOCK_RE.test(t)
   const isCopy = (t) => COPY_PATTERNS.some((re) => re.test(t))
 
+  /* 计时尾巴（中文「，用时12秒」/ 英文「 for 12s」）：换文案时保留它，这样计时器还在走 */
+  const TAIL_RE = /(，?\s*用时\s*[0-9][^，]*|\s+for\s+[0-9][^,]*)$/i
+  const keepTail = (t) => {
+    const m = TAIL_RE.exec(t)
+    return LABEL + (m ? m[1] : '')
+  }
+
+  /* 只替换容器内【第一个】可见文本节点。
+   * 为什么不是全换：新版文案挂在一个 <button data-turn-process> 里，同一个按钮内还有
+   * 工具调用计数、折叠内容等文字，全换会把它们一起毁掉。第一个非空文本节点就是那句文案。 */
   const swapInside = (host) => {
     const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
     for (let n; (n = walker.nextNode());) {
       const t = (n.nodeValue || '').trim()
       if (!t || t === LABEL || isClock(t)) continue
-      n.nodeValue = n.nodeValue.replace(t, LABEL)
+      /* 必须“像运行文案”才换：新版 [data-turn-process] 这个按钮在回合结束后依然存在，
+       * 那时文案是「已完成工作」，若无条件替换就会把它也改掉。
+       * 代价是上游换措辞时要在 COPY_PATTERNS 里补一条 —— 失配时 selfCheck 会告警。 */
+      if (!isCopy(t)) continue
+      n.nodeValue = n.nodeValue.replace(t, keepTail(t))
+      return
     }
   }
 
