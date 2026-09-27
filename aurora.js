@@ -117,6 +117,19 @@
       const host = el.closest ? el.closest(sel) : null
       if (host) { swapInside(host); return }
     }
+    /* 容器也可能在【新增子树内部】：首次挂载时 MutationObserver 给的 addedNode 往往是
+     * 更外层的节点（比如整条消息），closest() 只看祖先，于是这一帧找不到容器，只能走全局兜底；
+     * 而全局兜底为防误伤把 button 列进了 PROTECTED，结果就是「先看到深度求索中，一秒后才变成大肥鱼」。
+     * 所以这里再往子树里找一遍容器，保证首次插入就能在同一次微任务里换掉。 */
+    if (el.querySelectorAll) {
+      for (const sel of CONTAINERS) {
+        const hosts = el.querySelectorAll(sel)
+        if (hosts.length > 0) {
+          for (const h of hosts) swapInside(h)
+          return
+        }
+      }
+    }
     /* 全局兜底（容器钩子全失配时才需要）：只认“看起来就是运行文案”的文本，
      * 并且绝不碰菜单/按钮/表单/我们自己的浮层。 */
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
@@ -950,11 +963,19 @@
      * 另外 swap 是幂等的：换成 TO 之后不再匹配 FROM，不会反复写同一个节点触发新记录。 */
     observer = new MutationObserver((records) => {
       mutationSeq++   /* 给自检用：文档动过才值得重新扫 */
+      let needPlace = false   /* 只有「档位行刚被插进来」才值得立刻重摆浮层 */
       for (const rec of records) {
         if (panel && rec.target && panel.box.contains(rec.target)) continue
         if (rec.type === 'characterData') { swap(rec.target); continue }
-        for (const n of rec.addedNodes) swap(n)
+        for (const n of rec.addedNodes) {
+          /* 菜单一插入就立刻摆浮层（rAF 在同一帧、绘制之前），这样原生那几行根本不会被画出来，
+           * 观感上滑块是“直接出现”而不是“先原生、250ms 后被替换”。
+           * 只认档位行这个信号，避免流式输出时每个 token 都触发（那会撞上熔断）。 */
+          if (!needPlace && n.nodeType === 1 && n.querySelector && n.querySelector('[role="menuitemradio"]')) needPlace = true
+          swap(n)
+        }
       }
+      if (needPlace && !st.disabled) schedulePlace()
     })
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
 
