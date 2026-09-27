@@ -138,3 +138,10 @@ DSH 的 CSS Module 类名格式是 `<hash>_<localName>`：**hash 会随构建变
 - `@deepseek-ai/dsh-web-frontend` 升级会覆盖，需重跑 `install.ps1`。
 - 只支持浅色主题（所有覆盖都在 `body:not([data-ds-dark-theme])` 作用域内，深色主题保持原样）。
 - 文案是硬编码英文，所以用文本节点替换实现；若 DSH 改了文案，需要同时改 `aurora.js` 里的 `FROM`。
+- 与 DSH 的具体版本强相关（钩子是 `<hash>_<localName>` 后缀 + `data-*` 属性），跨大版本升级后建议重新核对。
+
+## License
+
+MIT —— 见 [LICENSE](LICENSE)。代码可自由使用；`logo.jpg` / `fish.png` / `bg.jpg` 是仓库作者的
+个人素材，替换成你自己的即可。
+
