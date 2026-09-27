@@ -1,10 +1,23 @@
-# DSH Aurora — DeepSeek Harness 外观覆盖层
+<p align="center">
+  <img src="desktop/app-icon-256.png" width="150" alt="蓝色大肥鱼工作站">
+</p>
 
-给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Web GUI 换皮：品牌标、思考状态文案、背景图与毛玻璃。
-**纯前端覆盖，不改 DSH 一行源码**；刷新浏览器即生效，不需要重启 `dsh web`。
+<h1 align="center">蓝色大肥鱼工作站</h1>
+<p align="center"><b>DSH 单独应用 + 美化</b></p>
 
-> 现状：原型阶段。所有改动都以文件注入的方式落在 DSH 已安装的前端产物目录里，
-> 因此 `@deepseek-ai/dsh-web-frontend` 升级/重装会覆盖掉，重跑一次 `install.ps1` 即可恢复。
+给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的两件东西：
+
+1. **桌面应用**：`desktop\` 下编译出的 `BlueFishStation.exe`（WinForms + WebView2），双击即启动，
+   自己拉起 DSH 服务、开一个没有浏览器界面的应用窗口，关窗自动收服务；
+2. **Web UI 覆盖层**：品牌标、思考状态文案、背景图与毛玻璃、模型菜单里的推理强度滑块。
+
+**不改 DSH 一行源码**；覆盖层走插件注入，`dsh-web-frontend` 升级也不会丢。
+
+> 形态：插件注入（推荐，随 DSH 升级存活）+ 桌面 EXE 外壳。
+> 文件注入模式（`install.ps1`）仍保留作为备用路径。
+
+> 社交预览图：`desktop/social-preview.png`（1280×640）。GitHub **没有**设置它的 API，
+> 需要在仓库页 Settings → Social preview 手动上传一次。
 
 ## 效果
 
