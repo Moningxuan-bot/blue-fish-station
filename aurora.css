@@ -36,13 +36,15 @@
 /* :has() 保证只改真正含品牌标的那个网格，不误伤别的 _headline */
 [class*="_headline"]:has([class*="_fishHitbox"]) { grid-template-columns: 44px auto auto; }
 
-/* ── 2) 「思考中」状态行前面的图标 ────────────────────────────────
- * 落点：ChatView 的 TurnStatus（div._turnStatus）：display:inline-flex、height:26px、
- *       font:var(--dsw-font-s-strong-14)，文字本身带渐变 shimmer 动画。
- * 为什么用 ::before 而不是往文本里塞字符/元素：这个组件每秒 setState 重渲染，
- *   往 React 的子节点数组里插元素会打乱它按索引的 diff；伪元素不归 React 管，绝对安全。
- * 尺寸 1.15em ≈ 16px（父级字号 14px）；父级已有 align-items:center，自动垂直居中。
+/* ── 2) 「思考中」状态行前面的图标（抗升级：双钩子） ──────────────
+ * 旧版落点：ui-conversation 的 TurnStatus，类名 _turnStatus。
+ * 新版（dsh-v0.1.7-rc.2）：搬到 ui-chat/RunningStatus.tsx，类名改成 _running，
+ *   但根节点带了一个稳定的 data 属性 data-chat-running —— 优先用它。
+ * 两个选择器并列，哪版命中就用哪个（新版里 _turnStatus 不存在，不会重复加图）。
+ * 为什么用 ::before 而不是往文本里塞元素：这个组件每秒重渲染，往 React 的子节点
+ *   数组里插元素会打乱它按索引的 diff；伪元素不归 React 管，绝对安全。
  */
+[data-chat-running]::before,
 [class*="_turnStatus"]::before {
   content: '';
   width: 1.6em;

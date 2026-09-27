@@ -1,0 +1,9 @@
+# 这条 bundle patch 只做一件事：把本插件作为一行插进 profile 的插件树。
+# 资源目录 assetDir 指向工作区，改完 CSS/JS 按 F5 即可，不用重装插件。
+- insert:
+    - id: aurora-overlay
+      name: 'dsh-plugin-aurora'
+      config:
+        assetDir: 'D:/WORK/Agent/dsh'
+        enabled: true
+        injectFavicon: true

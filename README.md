@@ -48,6 +48,31 @@ pwsh -File .\sync.ps1
 `.html/.js/.css/.svg/.json/.map/.webmanifest`，raster 图会被发成 `application/octet-stream`）、
 复制全部资产到 dist、并给 `index.html` 里的引用打上 `?v=` 版本号防缓存。
 
+## 两种部署形态（推荐插件模式）
+
+| | 文件注入（`install.ps1`） | **插件模式（推荐）** |
+|---|---|---|
+| 原理 | 往 `dist/index.html` 注入标签 + 把资源拷进 dist | `tapIndex` 每个 index 响应注入 + 自建路由提供资源 |
+| 升级 `dsh-web-frontend` 后 | ❌ 注入和资源被覆盖，要重跑 `install.ps1` | ✅ 启动时自动完成，不受影响 |
+| 改完 CSS/JS | 跑 `sync.ps1` | 直接 F5（插件每次请求都读盘） |
+| 资源位置 | dist 目录 | `assetDir` 指向的工作区目录 |
+
+```powershell
+pwsh -File .\install-plugin.ps1     # 安装（不需要 pnpm）
+pwsh -File .\uninstall-plugin.ps1   # 卸载
+```
+
+安装会做三件事：在 `$DSH_HOME/profiles/node_modules/` 下建一个**目录 junction** 指向本仓库的
+`dsh-plugin-aurora/`（这样不用 pnpm 就能被解析）、把它写进 profile 的 `dependencies`（`link:` 形式，
+将来跑 pnpm 也不会被清掉）、并加进 `dsh.profile.bundles`。**装完必须重启一次 `dsh web`** —— bundle 列表是启动时读的。
+
+两种形态**可以共存**：插件注入前会先检查标签是否已存在，存在就只改 `?v=`，所以不会重复加载。
+也就是说装了插件之后，即使 dist 被升级覆盖，插件也会把标签补回去。
+
+> 装插件前建议先预检（不启动服务，只合成配置树）：`dsh --profile web --dump-config`，
+> 能在里面看到 `- id: aurora-overlay` 就说明 bundle 解析和 patch 合成都没问题。
+> 万一重启后起不来，跑 `uninstall-plugin.ps1` 即可回退（profile manifest 也在安装时备份为 `.aurora-back`）。
+
 ## 卸载 / 回滚
 
 ```powershell
@@ -261,6 +286,24 @@ DSH 的模型菜单在 `document` 上挂了 `mousedown` 的「点在菜单外就
 | 侧边栏玻璃更明显 | `--dsw-specific-sidebar-fill` 调小，`blur(14px)` 调大 |
 | 侧边栏不想要虚化 | 删掉 `[class*="_sidebarCol"]::before` 整段，只保留半透明 |
 | 字号 / 图标大小 | 第 1、2 节里的 `width/height/font-size` |
+
+## 升级 DSH 之后要做什么
+
+1. 插件模式：**什么都不用做**（插件会自动注入），最多 F5 一下；
+2. 文件注入模式：重跑 `install.ps1`；
+3. 如果思考状态行/品牌标之类**突然不生效了**，看浏览器控制台：有 `[aurora] 运行状态容器钩子全都没匹配上…`
+   这类告警就说明上游改了钩子，把日志发我即可。
+
+### 已知的上游变化（dsh-v0.1.7-rc.2 实测）
+
+| 我们的钩子 | 新版状态 |
+|---|---|
+| 思考状态行 `[class*="_turnStatus"]` | ❌ 组件搬到 `ui-chat/RunningStatus.tsx`，类名改 `_running`；✅ 新增稳定属性 **`data-chat-running`**（已作为首选钩子） |
+| 文案 `Deep diving...` | ❌ 变成本地化 key（`chat.deepDiving` / `chat.deepDivingFor`，1 秒后带时长）；✅ 已改成**语义替换 + 全局兜底** |
+| 品牌标 `_brandMark` / Hero `_fishHitbox` / 轨迹 `_thinkingToggle` | ✅ 都还在 |
+| 模型菜单 `role="menuitemradio"` 与 `effortChoices` 结构 | ✅ 原样 |
+| RPC `session.models` / `session.selectModel` | ✅ 原样 |
+| frontend-static 的 MIME 表 | ✅ 一模一样（图片仍需包进 SVG） |
 
 ## 已知限制
 

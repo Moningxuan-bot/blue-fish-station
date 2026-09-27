@@ -1,0 +1,23 @@
+{
+  "name": "dsh-plugin-aurora",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH Web 外观覆盖层的宿主插件：tapIndex 注入 + 自建资源路由，升级 DSH 不再丢注入",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -26,20 +26,72 @@
 
   const rawFetch = window.fetch.bind(window)
 
-  /* ─────────── 1) 思考状态文案 ─────────── */
-  const FROM = 'Deep diving...'
-  const TO = '大肥鱼正在吃你的 TOKEN'
+  /* ─────────── 1) 运行状态文案（抗升级版） ───────────
+   * v1 把文案和类名都写死了（FROM='Deep diving...' + [class*="_turnStatus"]），上游一改就【静默失效】。
+   * 实测新版（dsh-v0.1.7-rc.2）：组件从 ui-conversation 搬到 ui-chat/RunningStatus.tsx，
+   *   类名 _turnStatus → _running，文案变成本地化 key（chat.deepDiving / chat.deepDivingFor），
+   *   并且 1 秒后会带上时长（'Deep diving for 12s'）。写死字符串的匹配全废。
+   * 现在三层兜底：
+   *   A. 容器钩子按优先级试：data-chat-running → _turnStatus → _runningText → _running
+   *      （data-* 属性是上游最稳定的东西，优先用它）
+   *   B. 容器内【语义替换】：不比对原文，把非“计时器样式”的文本统统换成我们的文案 ——
+   *      上游改文案、加时长都不影响；计时器（如 '1m 20s'）会被识别并保留
+   *   C. 全局兜底：整篇文档里“看起来就是运行文案”的文本也换掉（容器改名时也能救回来）
+   * 三层都没命中时 warn 一次，升级后一眼就能定位。
+   */
+  const LABEL = '大肥鱼正在吃你的 TOKEN'
+  const CONTAINERS = ['[data-chat-running]', '[class*="_turnStatus"]', '[class*="_runningText"]', '[class*="_running"]']
+  /* 认得出“这就是运行文案”的前缀；上游换词时在这里加一条即可 */
+  const COPY_PATTERNS = [/^deep diving/i, /^thinking/i, /^思考中/, /^正在思考/, /^深度思考/, /^深度潜水/]
+  const CLOCK_RE = /^[\d\s:：.·hms分秒]+$/i
+  const isClock = (t) => CLOCK_RE.test(t)
+  const isCopy = (t) => COPY_PATTERNS.some((re) => re.test(t))
+
+  const swapInside = (host) => {
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+    for (let n; (n = walker.nextNode());) {
+      const t = (n.nodeValue || '').trim()
+      if (!t || t === LABEL || isClock(t)) continue
+      n.nodeValue = n.nodeValue.replace(t, LABEL)
+    }
+  }
 
   const swap = (root) => {
-    if (!root || root.nodeType === 3) {
-      if (root && root.nodeValue && root.nodeValue.trim() === FROM) root.nodeValue = TO
-      return
+    const el = !root ? null : root.nodeType === 3 ? root.parentElement : root
+    if (!el || el.nodeType !== 1) return
+    if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return
+    for (const sel of CONTAINERS) {
+      const host = el.closest ? el.closest(sel) : null
+      if (host) { swapInside(host); return }
     }
-    if (root.nodeType !== 1) return
-    if (root.tagName === 'SCRIPT' || root.tagName === 'STYLE') return
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
     for (let n; (n = walker.nextNode());) {
-      if (n.nodeValue && n.nodeValue.trim() === FROM) n.nodeValue = n.nodeValue.replace(FROM, TO)
+      const t = (n.nodeValue || '').trim()
+      if (t && t !== LABEL && !isClock(t) && isCopy(t)) n.nodeValue = n.nodeValue.replace(t, LABEL)
+    }
+  }
+
+  /* 自检：容器钩子全部失配却发现了“像运行文案”的文本 → 说明上游改了结构，告警一次 */
+  let hookWarned = false
+  let mutationSeq = 0
+  let scannedSeq = -1
+  const selfCheck = () => {
+    if (hookWarned || !document.body) return
+    if (mutationSeq === scannedSeq) return   /* 文档没动过就不必再扫，避免空转 */
+    scannedSeq = mutationSeq
+    for (const sel of CONTAINERS) {
+      const host = document.querySelector(sel)
+      if (host) { swapInside(host); return }
+    }
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    for (let n; (n = walker.nextNode());) {
+      const t = (n.nodeValue || '').trim()
+      if (t && isCopy(t)) {
+        n.nodeValue = n.nodeValue.replace(t, LABEL)
+        hookWarned = true
+        console.warn('[aurora] 运行状态容器钩子全都没匹配上，已用全局文本兜底。上游可能改了结构，请把这条日志发我。命中文本: ' + t)
+        return
+      }
     }
   }
 
@@ -637,6 +689,7 @@
      * 而定时器天然不会被自己触发，结构上就不可能形成回路。
      * 另外 swap 是幂等的：换成 TO 之后不再匹配 FROM，不会反复写同一个节点触发新记录。 */
     observer = new MutationObserver((records) => {
+      mutationSeq++   /* 给自检用：文档动过才值得重新扫 */
       for (const rec of records) {
         if (panel && rec.target && panel.box.contains(rec.target)) continue
         if (rec.type === 'characterData') { swap(rec.target); continue }
@@ -650,6 +703,7 @@
     /* 定位的唯一驱动：250ms 轮询。菜单开/关、位置变化都会在一个 tick 内被发现，
      * 而轮询不可能被自己的 DOM 写入触发 —— 这是这次改动的核心安全保证。 */
     tickTimer = setInterval(() => { if (!st.disabled) place() }, 250)
+    setInterval(selfCheck, 5000)   /* 文案钩子自检，仅在上次扫描后文档有变化时才真的扫 */
     document.documentElement.dataset.aurora = 'on'
     bootstrapSession()
     console.log('[aurora] armed: thinking label + in-menu effort slider')
