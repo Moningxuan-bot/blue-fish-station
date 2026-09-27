@@ -34,6 +34,8 @@ Sync-Wrapped 'logo.jpg'      'logo.svg'      'image/jpeg'
 Sync-Wrapped 'fish.png'      'fish.svg'      'image/png'
 Sync-Wrapped 'fish-flat.png' 'fish-flat.svg' 'image/png'
 Sync-Wrapped 'bg.jpg'        'bg.svg'        'image/jpeg'
+Sync-Wrapped 'moods.png'     'moods.svg'     'image/png'
+Sync-Wrapped 'run.png'       'run.svg'       'image/png'
 
 Copy-Item (Join-Path $here 'aurora.css') (Join-Path $dist 'aurora.css')  -Force
 Copy-Item (Join-Path $here 'aurora.js')  (Join-Path $dist 'aurora.js')   -Force
@@ -41,6 +43,8 @@ Copy-Item (Join-Path $here 'logo.svg')      (Join-Path $dist 'aurora-logo.svg') 
 Copy-Item (Join-Path $here 'fish.svg')      (Join-Path $dist 'aurora-fish.svg')      -Force
 Copy-Item (Join-Path $here 'fish-flat.svg') (Join-Path $dist 'aurora-fish-flat.svg') -Force
 Copy-Item (Join-Path $here 'bg.svg')        (Join-Path $dist 'aurora-bg.svg')        -Force
+Copy-Item (Join-Path $here 'moods.svg')     (Join-Path $dist 'aurora-moods.svg')     -Force
+Copy-Item (Join-Path $here 'run.svg')       (Join-Path $dist 'aurora-run.svg')       -Force
 
 # Stamp the background-image reference inside the DEPLOYED css only, so a regenerated
 # bg.svg is never served stale. Read/write with explicit UTF-8: the css contains Chinese,

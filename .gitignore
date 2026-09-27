@@ -3,6 +3,8 @@ logo.svg
 fish.svg
 fish-flat.svg
 bg.svg
+moods.svg
+run.svg
 
 # 分析/抓取临时目录（不属于本项目）
 _probe/
