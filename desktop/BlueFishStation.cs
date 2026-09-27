@@ -241,7 +241,7 @@ static class BlueFishStation
     static void SelfTest()
     {
         Log("dpi: form=" + form.DeviceDpi + " web=" + web.DeviceDpi + " screen=" + Screen.PrimaryScreen.Bounds.Width + "x" + Screen.PrimaryScreen.Bounds.Height);
-        string js = "(function(){var s=window.__aurora||{};return 'a='+(!!window.__aurora)+';mark='+document.documentElement.getAttribute('data-aurora')+';efforts='+((s.efforts||[]).length)+';ids='+((s.efforts||[]).map(function(e){return e.id}).join('/'))+';rows='+(s.rows||0)+';radios='+(s.radios||0)+';title='+document.title;})()";
+        string js = "(function(){var s=window.__aurora||{};return 'a='+(!!window.__aurora)+';mark='+document.documentElement.getAttribute('data-aurora')+';efforts='+((s.efforts||[]).length)+';ids='+((s.efforts||[]).map(function(e){return e.id}).join('/'))+';rows='+(s.rows||0)+';radios='+(s.radios||0)+';dpr='+window.devicePixelRatio+';inner='+window.innerWidth+'x'+window.innerHeight+';title='+document.title;})()";
         try
         {
             web.CoreWebView2.ExecuteScriptAsync(js).ContinueWith(delegate(Task<string> t)
