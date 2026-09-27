@@ -90,45 +90,48 @@ exe 编译时挂了 `app.manifest`（`dpiAware=true/pm` + `dpiAwareness=PerMonit
 ICA 用的是 PNG 压缩条目（Explorer 支持），但 **.NET 的 `Icon` 类读不了这种条目**（`ToBitmap()` 会抛异常），
 所以窗口图标是运行时从 `app-icon-256.png` 用 `GetHicon()` 加载的 —— 这一点踩过，写在代码注释里了。
 
-## 安装
+## 安装与部署（三条路，按推荐顺序）
 
-前置：Windows + PowerShell 7（`pwsh`）、DSH 已装好并且 `web` profile 已初始化过。
+前置：Windows + **Windows PowerShell 5.1**（系统自带的 `powershell.exe` 就够，不需要装 PowerShell 7），
+以及装好的 DSH（`web` profile 初始化过一次即可）。
+
+### ① 桌面应用（一键启动，日常用这个）
 
 ```powershell
-pwsh -File .\install.ps1
+powershell -File .\desktop\install-desktop.ps1
 ```
 
-它会做三件事：
-1. 备份 `dist/index.html` 为 `index.html.aurora-bak`（只备份一次）；
-2. 往 `index.html` 注入 `<link .../aurora.css>`、`<script .../aurora.js>`，并把 favicon 指向新图标；
-3. 调用 `sync.ps1` 把 `aurora.css` / `aurora.js` / 图片同步进 dist。
+编译 `desktop\BlueFishStation.cs` → 部署到 `%LOCALAPPDATA%\BlueFishStation\` → 在桌面创建
+「蓝色大肥鱼工作站」快捷方式。细节见下面的「桌面应用」一节。
 
-然后回浏览器 **F5**。
-
-### 只改样式时
-
-改完 `aurora.css` 跑一次：
+### ② 插件注入（推荐，随 DSH 升级存活）
 
 ```powershell
-pwsh -File .\sync.ps1
+powershell -File .\install-plugin.ps1
 ```
 
-`sync.ps1` 会：把 `*.png`/`*.jpg` 包进内嵌 base64 的 SVG（DSH 静态服务器的 MIME 表只认
-`.html/.js/.css/.svg/.json/.map/.webmanifest`，raster 图会被发成 `application/octet-stream`）、
-复制全部资产到 dist、并给 `index.html` 里的引用打上 `?v=` 版本号防缓存。
+装完**重启一次 `dsh web`**（bundle 列表是启动时读的）。之后改 `aurora.css` / `aurora.js` 只要 **F5** ——
+插件每次请求都从工作区读盘，不用同步、不用重启。
 
-## 两种部署形态（推荐插件模式）
-
-| | 文件注入（`install.ps1`） | **插件模式（推荐）** |
-|---|---|---|
-| 原理 | 往 `dist/index.html` 注入标签 + 把资源拷进 dist | `tapIndex` 每个 index 响应注入 + 自建路由提供资源 |
-| 升级 `dsh-web-frontend` 后 | ❌ 注入和资源被覆盖，要重跑 `install.ps1` | ✅ 启动时自动完成，不受影响 |
-| 改完 CSS/JS | 跑 `sync.ps1` | 直接 F5（插件每次请求都读盘） |
-| 资源位置 | dist 目录 | `assetDir` 指向的工作区目录 |
+### ③ 文件注入（备用/历史路径，会被升级覆盖）
 
 ```powershell
-pwsh -File .\install-plugin.ps1     # 安装（不需要 pnpm）
-pwsh -File .\uninstall-plugin.ps1   # 卸载
+powershell -File .\install.ps1     # 首次：备份 index.html + 注入 <link>/<script> + 同步资源
+powershell -File .\sync.ps1        # 只改了 CSS/JS 时
+```
+
+`sync.ps1` 会把 `*.png`/`*.jpg` 包进内嵌 base64 的 SVG（DSH 静态服务的 MIME 表只认
+`.html/.js/.css/.svg/.json/.map/.webmanifest`，raster 图会被发成 `application/octet-stream`），
+再复制进 dist 并给引用打 `?v=` 防缓存。**每次升级 `dsh-web-frontend` 后都要重跑 `install.ps1`** ——
+这也是为什么它只作为备用路径。
+
+## 插件是怎么装的（`install-plugin.ps1` 做了什么）
+
+（两种形态的对比见「工作原理」一节。）
+
+```powershell
+powershell -File .\install-plugin.ps1     # 安装（不需要 pnpm）
+powershell -File .\uninstall-plugin.ps1   # 卸载
 ```
 
 安装会做三件事：在 `$DSH_HOME/profiles/node_modules/` 下建一个**目录 junction** 指向本仓库的
@@ -144,11 +147,24 @@ pwsh -File .\uninstall-plugin.ps1   # 卸载
 
 ## 卸载 / 回滚
 
+**插件模式**（推荐路径，装回/卸掉都只动 profile 里的一条记录）：
+
+```powershell
+powershell -File .\uninstall-plugin.ps1   # 移除 junction + 清掉 bundles/dependencies，然后重启 dsh web
+```
+
+**桌面应用**：删掉桌面快捷方式和 `%LOCALAPPDATA%\BlueFishStation\` 即可（它不在系统里注册任何东西）。
+
+**文件注入模式**（恢复成未修改的前端产物）：
+
 ```powershell
 $d = Join-Path $env:USERPROFILE '.dsh\profiles\node_modules\@deepseek-ai\dsh-web-frontend\dist'
 Copy-Item "$d\index.html.aurora-bak" "$d\index.html" -Force
 Remove-Item "$d\aurora.css","$d\aurora.js","$d\aurora-logo.svg","$d\aurora-fish.svg","$d\aurora-fish-flat.svg","$d\aurora-bg.svg","$d\aurora-moods.svg","$d\aurora-run.svg" -Force -ErrorAction SilentlyContinue
 ```
+
+> 另有一份完整的前端产物备份在 `_probe\dist-backup\`（99 个文件，含注入过的 index.html），
+> 需要时整个目录拷回去即可。
 
 ## 换素材
 
@@ -161,40 +177,69 @@ Remove-Item "$d\aurora.css","$d\aurora.js","$d\aurora-logo.svg","$d\aurora-fish.
 | `moods.png` | 四个档位的角色立绘（4 格等宽雪碧图，160×128/格） | 取自设计稿 1/3/4/5 号角色，已抠白底 |
 | `run.png` | 拖动时的跑动循环（12 格等宽雪碧图，96×77/格） | 取自跑动设计稿的 12 帧 |
 
-换完跑 `sync.ps1` 即可（脚本按时间戳决定是否重新生成 SVG 包装）。
+换完**直接 F5**（插件模式，`assetDir` 就指着这些源文件）；只有文件注入模式才需要跑一次 `sync.ps1`（脚本按时间戳决定是否重新生成 SVG 包装）。
 
 ## 工作原理
 
-### 为什么是文件注入
+### 为什么改成插件注入
 
 DSH 的前端由 `dsh-host-frontend-static` 提供，它**每个请求都重新读取 `dist/index.html`** 并跑一遍
-index taps。所以直接改这个文件、再 F5，就能生效 —— 不需要重启正在托管会话的 `dsh web`。
+index taps。所以只要能在响应上插一脚，就能生效、且**不需要重启正在托管会话的 `dsh web`**。
 
-### 为什么不用插件
+早期版本是用「文件注入」实现的（直接改 dist 里的 index.html + 把资源拷进 dist），代价是
+**每次升级 `dsh-web-frontend` 都会被覆盖**。现在的宿主插件把这两件事变成自动的：
 
-DSH 的插件分两种：宿主行（Host row）和客户端包（`dsh.client`）。前者只能改服务端行为，
-改不了浏览器里的 DOM/CSS；后者的构建预设 `packages/client/tsdown.client.ts` **没有随 npm 发布**，
-要出可用的客户端 bundle 基本得进仓库。所以外观覆盖走注入是最现实的路。
-正式的宿主插件（提供 `/aurora/*` 路由 + `tapIndex`）是这套原型的下一个形态。
+| | 文件注入（备用） | **宿主插件（当前）** |
+|---|---|---|
+| 注入时机 | 改 dist/index.html 文件 | `tapIndex` 每个 index 响应 |
+| 资源来源 | dist 目录里的副本 | 自建路由，每次请求读工作区 |
+| 升级 `dsh-web-frontend` 后 | ❌ 注入与资源一起被覆盖 | ✅ 自动补回，什么都不用做 |
+| 改完 CSS/JS | 跑 `sync.ps1` | 直接 **F5** |
+
+> 客户端包（`dsh.client`）那条路仍然不通：它的构建预设 `packages/client/tsdown.client.ts` 没有随
+> npm 发布，要出可用的客户端 bundle 基本得进仓库。宿主插件能做的事已经够覆盖外观需求了。
+
+### 为什么还要一个桌面外壳
+
+`dsh web` 默认会用系统浏览器打开 —— 有地址栏、有标签页、任务栏图标是浏览器的。
+`desktop\BlueFishStation.cs` 是一个 WinForms + WebView2 外壳：自己拉起服务、解析带 token 的地址、
+在一个没有浏览器界面的窗口里加载它，窗口标题/图标都是「蓝色大肥鱼工作站」，关窗自动收服务。
 
 ## 推理强度滑块（内部 RPC）
 
-DSH 浏览器端用的是自研 RPC，协议实测如下（`dsh-client-connection` 的 `postJson` + `callUnary`）：
+DSH 浏览器端用的是自研 RPC。**0.1.7-rc.2 换了一套命名和信封**（实测确认）：
 
 ```http
-POST /api/<method>        content-type: application/json
-body   { type: 'client-request', rpcId: <uuid>, method: '<method>', payload: { ... } }
-resp   { type: 'server-response', rpcId, result: { ok: true, value } | { ok: false, error } }
+POST /api/<namespace>/<method>        content-type: application/json
+body   { type:'client-request', rpcId:<uuid>, method:'<namespace>/<method>',
+         payload: { args: <按接口描述符 wire 名的对象> } }
+resp   { type:'server-response', rpcId, result: { ok:true, value } | { ok:false, error } }
 ```
 
-滑块用到两个方法：
-
-| 方法 | payload | 返回 |
+| 调用 | 端点（**斜杠**） | payload |
 |---|---|---|
-| `session.models` | `{ sessionId }` | `{ current: {provider, model, reasoningEffort?}, groups: [{id, models:[{id, name, reasoning:{defaultEffort, efforts:[{id,name}]}}]}], ... }` |
-| `session.selectModel` | `{ sessionId, provider, model, reasoningEffort? }` | `{ selected }` |
+| 读档位 | `session/modelCatalog`（**无参数**） | `{ args: {} }` |
+| 写档位 | `session/selectModel` | `{ args: { request: { sessionId, provider, model, reasoningEffort } } }` |
+| 会话列表 | `session/list` | `{ args: { _request: {} } }` |
 
-实测本机 `deepseek-v4-flash` 的档位：`off`(Off) / `low`(Low) / `high`(High) / `max`(Max)，默认 `high`。
+旧版（0.1.0-rc.x）是**点号路径 + 裸 payload**：`POST /api/session.models`，`payload: { sessionId }`。
+`aurora.js` 两种都试，并且优先复用**从 App 自己的请求里学到的**端点名与信封样式。
+
+目录返回的结构（`session/modelCatalog`）：
+
+```jsonc
+{
+  "default": { "provider": "deepseek-official", "model": "deepseek-flash", "reasoningEffort": "high" },
+  "groups": [ { "id": "deepseek-official", "models": [ {
+      "id": "deepseek-flash",
+      "reasoning": { "defaultEffort": "high",
+                     "efforts": [ { "id": "off", "name": "Off" }, /* low / high / max */ ] }
+  } ] } ]
+}
+```
+
+旧版这个字段叫 `current`（新版改名 `default`，两个都读）。实测本机档位：
+`off`(Off) / `low`(Low) / `high`(High) / `max`(Max)，默认 `high`。
 
 **`sessionId` 怎么来**：它没有现成的全局来源，所以 `aurora.js` 会 hook `window.fetch`，
 从 App 自己发出的 `/api/session.*` 请求体里学 —— 顺带把每个方法的真实请求体形状也记下来复用。
@@ -270,7 +315,7 @@ DSH 的 CSS Module 类名格式是 `<hash>_<localName>`：**hash 会随构建变
 | 品牌字标 | `[class*="_brandName"]` | `renderSlot('sidebar.brand.name')` |
 | 空白会话 Hero 品牌标 | `[class*="_fishHitbox"]` | ui-conversation `renderSlot('conversation.hero.brand.mark')` |
 | Hero 标题网格 | `[class*="_headline"]`（`grid-template-columns:34px auto auto`） | 放大图标时必须一起改第一列 |
-| 思考状态行 | `[class*="_turnStatus"]`，且带 `role="status" aria-live="polite"` | ui-conversation `ChatView.TurnStatus`，文案硬编码 `Deep diving...` |
+| 思考状态行 | **`[data-turn-process]`**（0.1.7+：那个 `<button>` 里的第一个文本节点就是文案）；旧版 `[class*="_turnStatus"]` | ui-chat `TurnProcessNodeView`；文案来自本地化 key `chat.deepDiving` / `message.turnProcess.deepDivingFor` |
 | 推理块标题 | `[data-variant="think"][data-state="running"] [class*="_title"]` | ui-conversation `ReasoningRow`，文案硬编码 `Think` |
 | 轨迹面板思考按钮 | `[class*="_thinkingToggle"]` | ui-trajectory，文案硬编码 `Thinking` |
 | 三栏布局列 | `[class*="_sidebarCol"] / _centerCol / _detailsCol` | ui-layout `AppFrame` |
@@ -367,8 +412,8 @@ DSH 的模型菜单在 `document` 上挂了 `mousedown` 的「点在菜单外就
 
 | 我们的钩子 | 新版状态 |
 |---|---|
-| 思考状态行 `[class*="_turnStatus"]` | ❌ 组件搬到 `ui-chat/RunningStatus.tsx`，类名改 `_running`；✅ 新增稳定属性 **`data-chat-running`**（已作为首选钩子） |
-| 文案 `Deep diving...` | ❌ 变成本地化 key（`chat.deepDiving` / `chat.deepDivingFor`，1 秒后带时长）；✅ 已改成**语义替换 + 全局兜底** |
+| 思考状态行 `[class*="_turnStatus"]` | ❌ rc.2 **产物里没有** `data-chat-running`（那是 master 源码里的，比 rc.2 新）；✅ 真实结构是 `<button data-turn-process>` + 内部 `<span class="_label">`，已作为首选钩子 |
+| 文案 `Deep diving...` | ❌ 变成本地化 key：`chat.deepDiving` =「深度求索中」/`Deep diving...`，`message.turnProcess.deepDivingFor` =「深度求索中，用时{duration}」；✅ 已改成**语义匹配 + 保留计时尾巴**（显示成「大肥鱼正在吃你的 TOKEN，用时12秒」） |
 | 品牌标 `_brandMark` / Hero `_fishHitbox` / 轨迹 `_thinkingToggle` | ✅ 都还在 |
 | 模型菜单 `role="menuitemradio"` 与 `effortChoices` 结构 | ✅ 原样 |
 | RPC **读档位** `session.models` | ❌ 改名 `session/modelCatalog`（**斜杠**路径、**无参数**），返回里 `current` → **`default`** |
@@ -378,12 +423,13 @@ DSH 的模型菜单在 `document` 上挂了 `mousedown` 的「点在菜单外就
 
 ## 已知限制
 
-- `@deepseek-ai/dsh-web-frontend` 升级会覆盖，需重跑 `install.ps1`。
+- **插件模式**下 `dsh-web-frontend` 升级不会丢注入；**文件注入模式**下需要重跑 `install.ps1`。
 - 只支持浅色主题（所有覆盖都在 `body:not([data-ds-dark-theme])` 作用域内，深色主题保持原样）。
-- 文案是硬编码英文，所以用文本节点替换实现；若 DSH 改了文案，需要同时改 `aurora.js` 里的 `FROM`。
-- 与 DSH 的具体版本强相关（钩子是 `<hash>_<localName>` 后缀 + `data-*` 属性），跨大版本升级后建议重新核对。
-- `/api/<method>` 是 DSH 内部协议，没有稳定性承诺；`session.models` / `session.selectModel` 改名或改
-  payload 形状时，滑块需要同步调整（`aurora.js` 里已把失败原因显示在滑块上，不会静默失败）。
+- 文案走**本地化 key**，所以脚本按语义匹配（认「深度求索中 / Deep diving」这类前缀）而不是写死字符串；
+  上游换措辞时要在 `aurora.js` 的 `COPY_PATTERNS` 里补一条（失配时 `selfCheck` 会在控制台告警）。
+- 与 DSH 的具体版本强相关（钩子是 `data-*` 属性 + `<hash>_<localName>` 后缀），跨大版本升级后建议重新核对。
+- `/api/<namespace>/<method>` 是 DSH 内部协议，没有稳定性承诺；端点名或信封形状再变时，
+  滑块需要同步调整（`aurora.js` 会先试学到的端点、再试候选列表，并把失败原因写在滑块上，不静默失败）。
 - 滑块会实时改写**当前会话**的推理强度（和界面里选模型时选 effort 是同一个操作）。
 
 ## License
