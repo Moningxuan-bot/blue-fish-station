@@ -5,7 +5,11 @@
  * RPC 协议（实测确认，见 README）：
  *   POST /api/<method>  { type:'client-request', rpcId, method, payload }
  *   resp                { type:'server-response', rpcId, result:{ ok, value|error } }
- * 用到的方法：session.models（读）/ session.selectModel（写）/ session.list（会话兜底）。
+ * 用到的方法（两代命名都兼容，且优先复用从 App 流量里学到的真实端点）：
+ *   读档位：session.modelCatalog（0.1.7-rc.2 起，无参数） / session.models（旧）
+ *   写档位：session.selectModel {sessionId, provider, model, reasoningEffort}
+ *   会话兜底：session.list → 取 updatedAt 最新的会话
+ *   返回里的当前选择：新版叫 default，旧版叫 current（两个都读）
  *
  * ⚠ 卡死事故记录（v3 → v4）
  *   v3 用 MutationObserver(childList, subtree) 观察 body，回调里只要看到档位行就 place()，
@@ -95,23 +99,56 @@
     }
   }
 
-  /* ─────────── 2) RPC ─────────── */
+  /* ─────────── 2) RPC ───────────
+   * 端点命名在 0.1.7-rc.2 变了：读档位从 session.models 改成 session.modelCatalog（无参数），
+   * 返回里原来的 current 改名叫 default。groups / models / reasoning.efforts 的结构没变。
+   * 与其硬编码猜测，主路径是【从 App 自己的流量里学】：hook fetch 时记下它用过的 method
+   * 字符串与目录响应值，优先复用；候选列表只用于首次打开菜单前的兜底。
+   */
+  const EP = {
+    catalog: ['session.modelCatalog', 'session.models'],
+    select: ['session.selectModel', 'session/selectModel'],
+    list: ['session.list', 'session/list'],
+  }
+  const learned = { catalog: null, select: null, list: null, lastCatalog: null }
   const seen = { sessionId: null, payload: {} }
 
   window.fetch = function (input, init) {
+    let method = null
     try {
       const url = typeof input === 'string' ? input : (input && input.url) || ''
-      const m = /\/api\/([A-Za-z.]+)/.exec(url)
+      const m = /\/api\/([A-Za-z0-9._$/-]+)/.exec(url)
       if (m && init && typeof init.body === 'string') {
         const body = JSON.parse(init.body)
         const p = body && body.payload
+        method = body && body.method
+        if (typeof method === 'string') {
+          /* 学真实端点名：新版 session.modelCatalog、旧版 session.models 都认得出来 */
+          if (/selectModel/.test(method)) learned.select = method
+          else if (/modelCatalog|(^|\.)models$/.test(method)) learned.catalog = method
+          if (/^session[./]list$/.test(method)) learned.list = method
+        }
         if (p) {
           seen.payload[m[1]] = p
           if (p.sessionId && p.sessionId !== seen.sessionId) onSession(p.sessionId)
         }
       }
     } catch (e) { /* 观测失败绝不影响 App 自己的请求 */ }
-    return rawFetch(input, init)
+    const res = rawFetch(input, init)
+    /* 顺带缓存目录响应：App 打开模型菜单时会自己去拉，我们直接复用 —— 既省一次请求，
+     * 也不怕上游再改结构（我们复用的是它自己认得的形状）。 */
+    try {
+      if (method && /modelCatalog|(^|\.)models$/.test(method) && res && res.clone) {
+        res.clone().json().then((full) => {
+          const v = full && full.result && full.result.ok ? full.result.value : null
+          if (v && v.groups) {
+            learned.lastCatalog = v
+            readState()   /* 拿到目录就立刻重读一次：不用等下次开菜单，滑块马上能出来 */
+          }
+        }).catch(() => {})
+      }
+    } catch (e) { /* 同上 */ }
+    return res
   }
 
   const rpc = async (method, payload) => {
@@ -128,6 +165,16 @@
     return full.result.value
   }
 
+  /* 依次试候选端点，第一个成功的就是它；优先用从 App 流量里学到的那个名字 */
+  const rpcAny = async (key, payload) => {
+    const list = learned[key] ? [learned[key]].concat(EP[key]) : EP[key]
+    let lastErr = null
+    for (const m of list) {
+      try { return await rpc(m, payload) } catch (e) { lastErr = e }
+    }
+    throw lastErr || new Error('no endpoint: ' + key)
+  }
+
   /* ─────────── 3) 状态 ─────────── */
   const st = {
     sessionId: null, provider: null, model: null, efforts: [], index: 0,
@@ -142,27 +189,32 @@
 
   /* ─────────── 4) 读当前档位 ─────────── */
   const readState = async () => {
-    if (!st.sessionId) return
     try {
-      const base = seen.payload['session.models'] || {}
-      const v = await rpc('session.models', Object.assign({}, base, { sessionId: st.sessionId }))
-      st.provider = v.current && v.current.provider
-      st.model = v.current && v.current.model
-      let reasoning
+      /* 新版 session.modelCatalog 不带参数；旧版 session.models 需要 sessionId。
+       * 两种 payload 都带上，服务端按自己的 schema 取用即可。 */
+      const payload = Object.assign({}, seen.payload[learned.catalog || ''] || {}, { sessionId: st.sessionId })
+      const v = learned.lastCatalog || await rpcAny('catalog', payload)
+      if (!v) { st.note = '目录为空'; render(); return }
+      /* current（旧）→ default（新）；再不行退回模型自带的 defaultEffort */
+      const cur = v.current || v.default || {}
+      st.provider = cur.provider
+      st.model = cur.model
+      let reasoning = null
       ;(v.groups || []).forEach((g) => {
         if (g.id !== st.provider) return
         ;(g.models || []).forEach((m) => { if (m.id === st.model) reasoning = m.reasoning })
       })
       st.efforts = (reasoning && reasoning.efforts) || []
-      const eff = (v.current && v.current.reasoningEffort) || (reasoning && reasoning.defaultEffort)
+      const eff = cur.reasoningEffort || (reasoning && reasoning.defaultEffort)
       const idx = st.efforts.findIndex((x) => x.id === eff)
       st.index = idx < 0 ? 0 : idx
-      st.note = ''
-      console.log('[aurora] efforts', st.efforts.map((e) => e.id).join('/'), 'current=' + eff)
+      st.note = st.efforts.length >= 2 ? '' : '当前模型未提供推理强度档位'
+      console.log('[aurora] efforts', st.efforts.map((e) => e.id).join('/'), 'current=' + eff,
+        'via=' + (learned.lastCatalog ? 'app-cache' : (learned.catalog || EP.catalog[0])))
     } catch (e) {
       st.efforts = []
       st.note = '读取失败: ' + (e && e.message ? e.message : e)
-      console.warn('[aurora] session.models failed', e)
+      console.warn('[aurora] modelCatalog failed', e)
     }
     render()
   }
@@ -170,7 +222,7 @@
   const bootstrapSession = async () => {
     if (st.sessionId) return
     try {
-      const v = await rpc('session.list', {})
+      const v = await rpcAny('list', {})
       const items = (v && v.items) || []
       const cands = items.filter((i) => !i.parentSessionId && !i.origin)
       const best = (cands.length ? cands : items).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0]
@@ -181,7 +233,7 @@
         st.note = '找不到会话'
       }
     } catch (e) {
-      st.note = 'session.list 失败: ' + (e && e.message ? e.message : e)
+      st.note = '会话列表读取失败: ' + (e && e.message ? e.message : e)
       console.warn('[aurora] session.list failed', e)
     }
     render()
@@ -556,7 +608,7 @@
     st.index = i
     render()
     try {
-      await rpc('session.selectModel', {
+      await rpcAny('select', {
         sessionId: st.sessionId, provider: st.provider, model: st.model,
         reasoningEffort: st.efforts[i].id
       })
