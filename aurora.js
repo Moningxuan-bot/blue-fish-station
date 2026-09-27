@@ -915,8 +915,9 @@
            * visibility:hidden 会让元素【不可聚焦】→ focus 落回 body → onBlur 认为焦点跑出菜单 → close()，
            * 于是「滑刚出现就被关掉」。opacity:0 的元素依然可聚焦 ✔ 也不改变布局 ✔。
            * pointer-events:none 让点击穿透到菜单本身（仍然是菜单内的 mousedown，不会触发 closeOutside）。 */
-          el.style.setProperty('opacity', '0', 'important')
-          el.style.setProperty('pointer-events', 'none', 'important')
+          /* 幂等写入：值已经对了就不再写，减少无谓的属性变更（将来若观察 attributes 也不会自激） */
+          if (el.style.opacity !== '0') el.style.setProperty('opacity', '0', 'important')
+          if (el.style.pointerEvents !== 'none') el.style.setProperty('pointer-events', 'none', 'important')
         }
         /* 面板不再强行塞进原生行那块矩形：给它一个最小宽度（4 个中文档位名要一行放得下），
          * 以原生行区域为中心摆放，高度自适应后垂直居中。所以它会比菜单略宽一点。 */
@@ -938,6 +939,18 @@
     } catch (e) {
       disableOverlay('place 抛错: ' + (e && e.message ? e.message : e))
     }
+  }
+
+  /* 不计入熔断次数的“帧内同步”：由用户输入（点击/键盘）驱动，天然有界。
+   * 熔断器是防自激回路的，把输入事件也计进去会被误判成 60/s 超限而停用浮层。 */
+  let syncScheduled = false
+  const scheduleSync = () => {
+    if (syncScheduled || st.disabled) return
+    syncScheduled = true
+    requestAnimationFrame(() => {
+      syncScheduled = false
+      if (!st.disabled) place()
+    })
   }
 
   const schedulePlace = () => {
@@ -981,6 +994,14 @@
 
     document.addEventListener('scroll', () => { if (st.placed) schedulePlace() }, true)
     window.addEventListener('resize', () => { if (st.placed) schedulePlace() })
+    /* 切到档位面板【可能是纯 CSS display 切换】（类名/样式变化），而我们对 attributes 是
+     * 故意不观察的（怕自己的行内样式写入自激），所以那种情况收不到 mutation 通知、
+     * 只能等 250ms 轮询 → 原生那几行先被画出来。改成用输入事件驱动：
+     * 捕获阶段先预约一帧，React 的离散事件是同步提交的，rAF 跑在提交之后、绘制之前，
+     * 于是同一帧内浮层就摆好了，原生行根本来不及显示。 */
+    for (const type of ['pointerdown', 'mousedown', 'click', 'keydown']) {
+      document.addEventListener(type, () => scheduleSync(), true)
+    }
     /* 定位的唯一驱动：250ms 轮询。菜单开/关、位置变化都会在一个 tick 内被发现，
      * 而轮询不可能被自己的 DOM 写入触发 —— 这是这次改动的核心安全保证。 */
     tickTimer = setInterval(() => { if (!st.disabled) place() }, 250)
