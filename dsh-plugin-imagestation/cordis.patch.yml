@@ -1,0 +1,21 @@
+# dsh-plugin-imagestation - bundle layer.
+#
+# Patch semantics (dsh-app-boot / cordis-plugin-include's PatchOptions, read from source):
+#   * every top-level list item MUST carry `id`; a non-insert item without one is skipped
+#     with a warning ("patch: id is required for non-insert patches")
+#   * a non-insert item targets an EXISTING row by id and merges its other keys over it
+#   * `insert` without `id` appends NEW rows; `insert` WITH `id` appends into that group
+#   * an item that matches nothing warns and is skipped - it never throws
+#
+# Consequence: a bare `- id: image-station` row here would be silently dropped, because no
+# row with that id exists yet. New rows therefore go inside `- insert:`, exactly as every
+# bundle shipped with DSH does it.
+#
+# `config` is this plugin's own configuration. Nothing in it is required to boot: the host
+# half starts even with an empty config, so a bad key can never stop the plugin loading.
+# Real values (base URL, model name, unit price) get filled in at the stage that needs them.
+- insert:
+    - id: image-station
+      name: dsh-plugin-imagestation
+      config:
+        enabled: true
