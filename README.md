@@ -1,110 +1,47 @@
 <p align="center">
-  <img src="desktop/app-icon-256.png" width="150" alt="蓝色大肥鱼工作站">
+  <img src="docs/station-intro.png" alt="蓝色大肥鱼工作站 —— DSH 桌面应用，已集成 GPT 绘图工作站">
 </p>
 
 <h1 align="center">蓝色大肥鱼工作站</h1>
-<p align="center"><b>DSH 单独应用 + 美化</b></p>
 
-给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的两件东西：
+<p align="center"><b>DSH 单独应用</b> · <b>界面美化</b> · <b>集成 GPT 绘图工作站</b></p>
 
-1. **桌面应用**：`desktop\` 下编译出的 `BlueFishStation.exe`（WinForms + WebView2），双击即启动，
-   自己拉起 DSH 服务、开一个没有浏览器界面的应用窗口，关窗自动收服务；
-2. **Web UI 覆盖层**：品牌标、思考状态文案、背景图与毛玻璃、模型菜单里的推理强度滑块。
+<p align="center">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6">
+  <img alt="dsh" src="https://img.shields.io/badge/DSH-0.1.7--rc.2-4176e6">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
+</p>
 
-**不改 DSH 一行源码**；覆盖层走插件注入，`dsh-web-frontend` 升级也不会丢。
+把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 变成**双击就能用的桌面程序**，
+顺手把界面换成自己的样子，再塞进一个能直接出图的绘图工作站。
+**不改 DSH 一行源码**：桌面部分是一个 WebView2 外壳，界面部分是一个宿主插件。
 
-> 形态：插件注入（推荐，随 DSH 升级存活）+ 桌面 EXE 外壳。
-> 文件注入模式（`install.ps1`）仍保留作为备用路径。
+| 组成 | 是什么 | 目录 |
+|---|---|---|
+| **桌面应用** | `BlueFishStation.exe`：自己拉起 DSH 服务、开一个没有浏览器界面的窗口 | [`desktop/`](desktop) |
+| **界面美化** | 宿主插件：品牌标 / 思考文案 / 背景毛玻璃 / 推理强度滑块 | [`dsh-plugin-aurora/`](dsh-plugin-aurora) · [`aurora.css`](aurora.css) · [`aurora.js`](aurora.js) |
+| **绘图工作站** | 独立插件：中文描述 → 扩写提示词 → 出图，带规范自检与计费 | [`dsh-plugin-imagestation/`](dsh-plugin-imagestation) |
 
-> 社交预览图：`desktop/social-preview.png`（1280×640）。GitHub **没有**设置它的 API，
-> 需要在仓库页 Settings → Social preview 手动上传一次。
+## 目录
 
-## 效果
+[快速开始](#快速开始) · [功能一览](#功能一览) · [仓库结构](#仓库结构) · [它是怎么工作的](#它是怎么工作的) ·
+[换素材调参](#换素材--调参) · [排错](#排错) · [卸载与回滚](#卸载与回滚) · [升级 DSH 之后](#升级-dsh-之后) ·
+[踩坑记录](#踩坑记录) · [已知限制](#已知限制)
 
-| 位置 | 改动 |
-|---|---|
-| 侧边栏 / 折叠态 / 空白会话 Hero 的品牌标 | 换成自定义图片 |
-| 浏览器标签图标 | 换成自定义图片 |
-| 品牌字标（logo 右侧） | 换成「蓝色大肥鱼」+「工作站」双色文字 |
-| 思考状态行 | `Deep diving...` → 「大肥鱼正在吃你的 TOKEN」，前面带图片图标 |
-| 整站背景 | 换成自定义背景图（+ 柔光罩），替掉刺眼的纯白 |
-| 侧边栏 | 毛玻璃（半透明 + 背景虚化） |
-| 模型菜单 → 思考强度 | **自绘滑块**：渐变胶囊轨道 + 星星圆点 + 百分比胶囊刻度 + 中文档位名 |
-| 思考强度面板 | **档位立绘**：四个档位各一张角色图，当前档全亮、其余压暗 |
-| 拖动滑块时 | **角色跑动**：12 帧跑动图骑在圆点上跟着手跑；**流光**从轨道左→右扫过 |
-| 松手定档 | 跑动角色退场，档位立绘重新出现并停在当前档 |
-| **桌面应用** | 「蓝色大肥鱼工作站」：双击即启动（见下节） |
+## 快速开始
 
-## 桌面应用：蓝色大肥鱼工作站
+前置：Windows 10/11 + 系统自带的 **Windows PowerShell 5.1**（不需要 PowerShell 7）、装好的 DSH（`web` profile 初始化过一次即可）。
 
-`desktop\` 下是一个真正的 Windows 桌面外壳（WinForms + WebView2，C# 编译成单个 EXE）：
-双击桌面快捷方式 → 它自己拉起一个 DSH 服务 → 打开一个**没有浏览器界面**的应用窗口（自定义图标与标题）。
-
-```powershell
-powershell -File .\desktop\install-desktop.ps1   # 编译 + 部署 + 建桌面快捷方式
-```
-
-它会：
-
-1. 用 .NET Framework 自带的 `csc` 编译 `BlueFishStation.cs`（源码纯 ASCII，中文用 `\u` 转义，避免编码坑）；
-2. 把 `BlueFishStation.exe` + WebView2 三个依赖 + 图标复制到 `%LOCALAPPDATA%\BlueFishStation\`；
-3. 在桌面创建「蓝色大肥鱼工作站.lnk」（名字由码点拼出，脚本本身仍是纯 ASCII）。
-
-运行行为：
-
-| 行为 | 说明 |
-|---|---|
-| 启动服务 | `cmd /c dsh web --port 0 --no-open` → **随机端口**，不会和终端里那个实例抢端口 |
-| 取认证 URL | 读子进程 stdout，按 `http://127.0.0.1:\d+/\?token=...` 抓出带 token 的地址（0.1.7 起 `/api` 与首页都要过浏览器信任闸门） |
-| 窗口 | WebView2 全屏填充，`form.Text` = 蓝色大肥鱼工作站，窗口/任务栏图标来自 `app-icon-256.png` |
-| 退出 | 关窗时 `taskkill /pid <pid> /T /F` 把整个服务进程树收掉 |
-| 单实例 | 命名互斥体，重复启动只会提示「已经在运行」 |
-| 日志 | `%LOCALAPPDATA%\BlueFishStation\station.log`（含服务 stdout，排错用） |
-
-命令行参数（一般不用管）：`--url=<带 token 的地址>` 直接连已有实例；`--userdata=<目录>` 指定 WebView2 用户数据目录
-（同一目录不能被两个实例同时使用，所以自测时要用它避开你正开着的窗口）；`--selftest` 见下。
-
-### 高 DPI（必须 Per-Monitor V2）
-
-exe 编译时挂了 `app.manifest`（`dpiAware=true/pm` + `dpiAwareness=PerMonitorV2`）并随 exe 部署 `app.config`
-（`DpiAwareness=PerMonitorV2`）。**缺了这两个，进程就是 DPI 不感知**，Windows 会按 96 DPI 渲染整个窗口
-再位图拉伸到实际分辨率 —— 症状正是「窗口尺寸一变就整体发糊」。
-
-实测这台机器：物理 2560×1600 / 虚拟 1707×1067 = **150% 缩放（DPI 144）**，旧 build 查询结果为 `UNAWARE`。
-加清单后 `Screen.Bounds` 直接报物理像素（2560×1600），说明进程已是 DPI 感知。
-
-### 更新应用
-
-改完 `BlueFishStation.cs` 后，**双击 `desktop\redeploy.cmd`** 即可（编译 + 部署 + 更新快捷方式）。
-若应用正在运行，脚本会明确提示先关掉窗口（exe 被占用无法覆盖）。
-
-无头自测（不开窗口，跑完自己退出，退出码 0 表示 OK）：
-
-```powershell
-& "$env:LOCALAPPDATA\BlueFishStation\BlueFishStation.exe" --selftest
-```
-它会在 WebView2 里执行一段 JS，确认覆盖层真的生效：`a=true;mark=on;efforts=4;ids=off/low/high/max`。
-
-关于图标：源图（`Pictures\93a81a91a9f8bf70556128e5180c1918400820618.png`，1378×1382，**本身就是透明底**）
-由 `desktop\make-icons.ps1` 生成 6 个尺寸（256/128/64/48/32/16）的 `app-icon.ico` 与 `app-icon-256.png`。
-ICA 用的是 PNG 压缩条目（Explorer 支持），但 **.NET 的 `Icon` 类读不了这种条目**（`ToBitmap()` 会抛异常），
-所以窗口图标是运行时从 `app-icon-256.png` 用 `GetHicon()` 加载的 —— 这一点踩过，写在代码注释里了。
-
-## 安装与部署（三条路，按推荐顺序）
-
-前置：Windows + **Windows PowerShell 5.1**（系统自带的 `powershell.exe` 就够，不需要装 PowerShell 7），
-以及装好的 DSH（`web` profile 初始化过一次即可）。
-
-### ① 桌面应用（一键启动，日常用这个）
+### ① 桌面应用（日常用这个）
 
 ```powershell
 powershell -File .\desktop\install-desktop.ps1
 ```
 
-编译 `desktop\BlueFishStation.cs` → 部署到 `%LOCALAPPDATA%\BlueFishStation\` → 在桌面创建
-「蓝色大肥鱼工作站」快捷方式。细节见下面的「桌面应用」一节。
+编译 `desktop\BlueFishStation.cs` → 部署到 `%LOCALAPPDATA%\BlueFishStation\` → 在桌面创建「蓝色大肥鱼工作站」快捷方式。
+**双击即用**。改了代码之后，双击 [`desktop\redeploy.cmd`](desktop/redeploy.cmd) 重新部署。
 
-### ② 插件注入（推荐，随 DSH 升级存活）
+### ② 界面美化插件（随 DSH 升级存活）
 
 ```powershell
 powershell -File .\install-plugin.ps1
@@ -113,101 +50,150 @@ powershell -File .\install-plugin.ps1
 装完**重启一次 `dsh web`**（bundle 列表是启动时读的）。之后改 `aurora.css` / `aurora.js` 只要 **F5** ——
 插件每次请求都从工作区读盘，不用同步、不用重启。
 
-### ③ 文件注入（备用/历史路径，会被升级覆盖）
+### ③ 绘图工作站
 
 ```powershell
-powershell -File .\install.ps1     # 首次：备份 index.html + 注入 <link>/<script> + 同步资源
+powershell -File .\install-imagestation.ps1
+```
+
+重启后侧栏出现「绘图工作站」入口。提示规范写在 [`dsh-plugin-imagestation/specs/*.md`](dsh-plugin-imagestation/specs)，
+**改规范＝改文件 + F5**，不用改代码。详细用法见[它自己的 README](dsh-plugin-imagestation/README.md)。
+
+### ④ 备用：文件注入（会被升级覆盖）
+
+```powershell
+powershell -File .\install.ps1     # 备份 index.html + 注入 <link>/<script> + 同步资源到 dist
 powershell -File .\sync.ps1        # 只改了 CSS/JS 时
 ```
 
 `sync.ps1` 会把 `*.png`/`*.jpg` 包进内嵌 base64 的 SVG（DSH 静态服务的 MIME 表只认
 `.html/.js/.css/.svg/.json/.map/.webmanifest`，raster 图会被发成 `application/octet-stream`），
-再复制进 dist 并给引用打 `?v=` 防缓存。**每次升级 `dsh-web-frontend` 后都要重跑 `install.ps1`** ——
-这也是为什么它只作为备用路径。
+再复制进 dist 并给引用打 `?v=` 防缓存。**每次升级 `dsh-web-frontend` 后都要重跑** —— 所以它只是备用路径。
 
-## 插件是怎么装的（`install-plugin.ps1` 做了什么）
+## 功能一览
 
-（两种形态的对比见「工作原理」一节。）
+### 桌面应用
 
-```powershell
-powershell -File .\install-plugin.ps1     # 安装（不需要 pnpm）
-powershell -File .\uninstall-plugin.ps1   # 卸载
+| | 说明 |
+|---|---|
+| 一键启动 | 双击快捷方式：拉起 `dsh web --port 0 --no-open` → 解析带 token 的地址 → 载入窗口 |
+| 无浏览器界面 | WinForms + WebView2，没有地址栏/标签页；标题与图标都是「蓝色大肥鱼工作站」 |
+| 高 DPI | 挂 `app.manifest`（PerMonitorV2）+ `app.config`，150% 缩放下按 144 DPI 原生渲染，窗口任意缩放都锐利 |
+| 干净退出 | 关窗时 `taskkill /pid <pid> /T /F` 收掉整个服务进程树 |
+| 单实例 | 命名互斥体，重复双击只提示「已经在运行」 |
+| 参数 | `--url=<带 token 地址>` 连已有实例；`--userdata=<目录>` 换 WebView2 数据目录；`--selftest` 无头自检 |
+| 日志 | `%LOCALAPPDATA%\BlueFishStation\station.log`（含服务 stdout/stderr） |
+
+### 界面美化
+
+| 位置 | 改动 |
+|---|---|
+| 侧边栏 / 折叠态 / 空白会话 Hero 的品牌标 | 换成自定义图片 |
+| 浏览器标签图标 | 换成自定义图片 |
+| 品牌字标（logo 右侧） | 换成「蓝色大肥鱼」+「工作站」双色文字 |
+| 思考状态行 | 「深度求索中，用时12秒」→「**大肥鱼正在吃你的 TOKEN**，用时12秒」（保留计时） |
+| 整站背景 | 换成自定义背景图（+ 柔光罩），替掉刺眼的纯白 |
+| 侧边栏 | 毛玻璃（半透明 + 背景虚化） |
+| 模型菜单 → 思考强度 | **自绘滑块**：渐变胶囊轨道 + 星星圆点 + 百分比胶囊刻度 + 中文档位名 |
+| 思考强度面板 | **档位立绘**：四个档位各一张角色图，当前档全亮、其余压暗 |
+| 拖动滑块时 | **角色跑动**：12 帧跑动图骑在圆点上跟着手跑；**流光**从轨道左→右扫过 |
+| 松手定档 | 跑动角色退场，档位立绘重新出现并停在当前档 |
+
+### 绘图工作站
+
+- 中文描述 → **扩写提示词**（实时流式）→ **出图**，每张 18–30 秒、**固定 $0.03**
+- 提示规范文件化（`specs/*.md`），出厂三个预设，支持 `base` 继承与 config 内联覆盖
+- **规范自检**（`lib/lint.js`）：查质量词、danbooru 计数标签、Markdown、Negative Prompt 区块等，只报告不改写
+- **参考图（图生图）**：拖入或选文件；>2MB 会在浏览器里自动压到长边 1536
+- **中转站脾气适配**：提交前剥离已知无效参数（`background` / `output_format`），拿到图后校验真实字节（尺寸/alpha/格式），
+  请求与实得任何不一致都挂在面板上；`size`、`n`、`/v1/images/edits`、`mask` 实测有效
+- 图片写到 `$DSH_HOME/image-station/images`（相对路径按 `$DSH_HOME` 解析，不按 cwd）
+
+## 仓库结构
+
+```
+desktop/                     桌面应用（WebView2 外壳）
+  BlueFishStation.cs         唯一源文件（C# 5，纯 ASCII，中文用 \u 转义）
+  BlueFishStation.exe        编译产物（已提交，方便直接部署）
+  app.manifest               PerMonitorV2 高 DPI 清单（编译时 /win32manifest 挂上）
+  app.config                 部署为 BlueFishStation.exe.config（WinForms 的 DpiAwareness 键）
+  install-desktop.ps1        编译 + 部署 + 建桌面快捷方式
+  redeploy.cmd               双击重新部署
+  make-icons.ps1             源图 → 6 尺寸 app-icon.ico + app-icon-256.png
+  extract-webview2.ps1       从 nupkg 里取 WebView2 SDK 三个文件
+  gen-social-preview.ps1     生成 1280x640 社交预览图
+  Microsoft.Web.WebView2.*   运行时依赖（随 exe 部署）
+
+dsh-plugin-aurora/           界面美化插件（宿主半侧）
+  lib/index.js               8 条资源路由 + tapIndex 注入
+  cordis.patch.yml           往 profile 插件树插入一行
+
+aurora.css                   样式：1) LOGO  2) 思考行图标  3) 品牌字标  4) 背景+毛玻璃
+aurora.js                    行为：思考文案替换 + 推理强度滑块
+logo.jpg fish.png fish-flat.png bg.jpg moods.png run.png   源素材
+tools/mkbg.cs                背景图转换：居中裁剪 + 重采样 + 锐化
+
+dsh-plugin-imagestation/     绘图工作站（独立插件，见其自家 README）
+install.ps1 / sync.ps1       备用：文件注入模式
+install-plugin.ps1 / uninstall-plugin.ps1   美化插件的装/卸
+docs/station-intro.png       本仓库介绍图
 ```
 
-安装会做三件事：在 `$DSH_HOME/profiles/node_modules/` 下建一个**目录 junction** 指向本仓库的
-`dsh-plugin-aurora/`（这样不用 pnpm 就能被解析）、把它写进 profile 的 `dependencies`（`link:` 形式，
-将来跑 pnpm 也不会被清掉）、并加进 `dsh.profile.bundles`。**装完必须重启一次 `dsh web`** —— bundle 列表是启动时读的。
+## 它是怎么工作的
 
-两种形态**可以共存**：插件注入前会先检查标签是否已存在，存在就只改 `?v=`，所以不会重复加载。
-也就是说装了插件之后，即使 dist 被升级覆盖，插件也会把标签补回去。
+### 桌面外壳：怎么拿到「不用登录」的窗口
 
-> 装插件前建议先预检（不启动服务，只合成配置树）：`dsh --profile web --dump-config`，
-> 能在里面看到 `- id: aurora-overlay` 就说明 bundle 解析和 patch 合成都没问题。
-> 万一重启后起不来，跑 `uninstall-plugin.ps1` 即可回退（profile manifest 也在安装时备份为 `.aurora-back`）。
+0.1.7 起 DSH 的首页与 `/api` 都要过一道**浏览器信任闸门**：进程启动时生成 launch token，
+把 `http://127.0.0.1:<port>/?token=...` 打印到终端，浏览器访问它才换到签名 cookie。所以外壳的做法是：
 
-## 卸载 / 回滚
-
-**插件模式**（推荐路径，装回/卸掉都只动 profile 里的一条记录）：
-
-```powershell
-powershell -File .\uninstall-plugin.ps1   # 移除 junction + 清掉 bundles/dependencies，然后重启 dsh web
+```
+cmd /c dsh web --port 0 --no-open
+  ↓ stdout: "dsh web: http://127.0.0.1:63183/?token=..."
+  ↓ 正则抓出地址 → web.Source = new Uri(url)
 ```
 
-**桌面应用**：删掉桌面快捷方式和 `%LOCALAPPDATA%\BlueFishStation\` 即可（它不在系统里注册任何东西）。
+`--port 0` 让 OS 挑一个空闲端口，所以它**不会和你终端里那个实例抢端口**。
 
-**文件注入模式**（恢复成未修改的前端产物）：
+### 高 DPI：「窗口一变尺寸就糊」的真凶
 
-```powershell
-$d = Join-Path $env:USERPROFILE '.dsh\profiles\node_modules\@deepseek-ai\dsh-web-frontend\dist'
-Copy-Item "$d\index.html.aurora-bak" "$d\index.html" -Force
-Remove-Item "$d\aurora.css","$d\aurora.js","$d\aurora-logo.svg","$d\aurora-fish.svg","$d\aurora-fish-flat.svg","$d\aurora-bg.svg","$d\aurora-moods.svg","$d\aurora-run.svg" -Force -ErrorAction SilentlyContinue
-```
+exe 默认**没有 DPI 感知声明**，Windows 于是按 96 DPI 渲染整个窗口、再位图拉伸到实际分辨率。
+本机实测：物理 2560×1600 / 虚拟 1707×1067 = **150% 缩放**，旧 build 的进程感知级别是 `UNAWARE` → 糊。
+修法是编译时挂 [`app.manifest`](desktop/app.manifest)（`dpiAware=true/pm` + `dpiAwareness=PerMonitorV2`）
+并部署 [`app.config`](desktop/app.config)（`DpiAwareness=PerMonitorV2`）。修好后同一查询返回 `PER_MONITOR_AWARE`，
+页面内 `window.devicePixelRatio = 1.5`，内容按原生 144 DPI 渲染。
 
-> 另有一份完整的前端产物备份在 `_probe\dist-backup\`（99 个文件，含注入过的 index.html），
-> 需要时整个目录拷回去即可。
+### 覆盖层：为什么能活过 DSH 升级
 
-## 换素材
+DSH 的前端由 `dsh-host-frontend-static` 提供，它**每个请求都重新读取 `dist/index.html`** 并跑一遍 index taps。
+宿主插件正好有这两个钩子：
 
-| 文件 | 用途 | 说明 |
-|---|---|---|
-| `logo.jpg` | 品牌标（侧边栏/折叠态/Hero）+ favicon | 方形效果最好 |
-| `fish.png` | 思考状态行前的图标（已抠白底） | 由 `fish-src.png` 处理而来 |
-| `fish-flat.png` | 同上但保留白底 | 备选，切 `aurora.css` 里的 url 即可 |
-| `bg.jpg` | 整站背景图 | `cover` 铺满，注意左右会被裁。**当前 2560×1600**（正好等于本机 150% 缩放下的物理分辨率，不再被放大）。换图后用 `tools\mkbg.cs` 转换：居中裁到 16:10 + 双三次重采样 + 轻度锐化（`mkbg.exe <in> bg.jpg 2560 1600 0.55`） |
-| `moods.png` | 四个档位的角色立绘（4 格等宽雪碧图，160×128/格） | 取自设计稿 1/3/4/5 号角色，已抠白底 |
-| `run.png` | 拖动时的跑动循环（12 格等宽雪碧图，96×77/格） | 取自跑动设计稿的 12 帧 |
+| 钩子 | 作用 |
+|---|---|
+| `webServer.register({ kind:"exact", path:"/aurora.css", ... })` | 8 条精确路由，每次请求读工作区文件 + `no-store` |
+| `webServer.tapIndex(html => ...)` | 每个 index 响应注入 `<link>`/`<script>`（版本号取资源 mtime） |
 
-换完**直接 F5**（插件模式，`assetDir` 就指着这些源文件）；只有文件注入模式才需要跑一次 `sync.ps1`（脚本按时间戳决定是否重新生成 SVG 包装）。
+于是「改文件 → F5」就是最新，而 `dsh-web-frontend` 升级覆盖 dist 也伤不到它。
 
-## 工作原理
+安装不用 pnpm：在 `$DSH_HOME/profiles/node_modules/` 建一个**目录 junction** 指向本仓库的插件目录，
+再往 profile 的 `dependencies`（`link:` 形式，将来跑 pnpm 也不会被清掉）和 `dsh.profile.bundles` 各写一条。
+装之前可以先干跑一次预检：`dsh --profile web --dump-config`，能看到 `- id: aurora-overlay` 就说明 bundle 解析与 patch 合成都没问题。
 
-### 为什么改成插件注入
+### 思考状态文案：三层兜底 + 语义匹配
 
-DSH 的前端由 `dsh-host-frontend-static` 提供，它**每个请求都重新读取 `dist/index.html`** 并跑一遍
-index taps。所以只要能在响应上插一脚，就能生效、且**不需要重启正在托管会话的 `dsh web`**。
+新版的文案不再硬编码，而是本地化 key：`chat.deepDiving` =「深度求索中」/`Deep diving...`，
+`message.turnProcess.deepDivingFor` =「深度求索中，用时{duration}」。而且它挂在一个**回合结束后仍然存在**的
+`<button data-turn-process>` 里（跑完文案变「已完成工作」），所以替换必须带语义判断：
 
-早期版本是用「文件注入」实现的（直接改 dist 里的 index.html + 把资源拷进 dist），代价是
-**每次升级 `dsh-web-frontend` 都会被覆盖**。现在的宿主插件把这两件事变成自动的：
+1. **容器钩子按优先级试**：`[data-turn-process]` → `[data-chat-running]` → `[class*="_turnStatus"]` → `[class*="_runningText"]` → `[class*="_running"]`
+   （首次插入时 MutationObserver 给的往往是更外层节点，所以祖先找不到时会再往**子树内部**找一遍）
+2. **只换容器内第一个「像运行文案」的文本节点**，并保留「，用时12秒」尾巴，计时器继续走
+3. **全局兜底**：整篇文档里像运行文案的文本也换，但绝不碰 `PROTECTED`（我们自己的浮层、菜单、按钮、表单、`role=status` 无障碍节点）
 
-| | 文件注入（备用） | **宿主插件（当前）** |
-|---|---|---|
-| 注入时机 | 改 dist/index.html 文件 | `tapIndex` 每个 index 响应 |
-| 资源来源 | dist 目录里的副本 | 自建路由，每次请求读工作区 |
-| 升级 `dsh-web-frontend` 后 | ❌ 注入与资源一起被覆盖 | ✅ 自动补回，什么都不用做 |
-| 改完 CSS/JS | 跑 `sync.ps1` | 直接 **F5** |
+三层都没命中时 `selfCheck` 会在控制台 warn 一次 —— 升级后一眼就能定位。
 
-> 客户端包（`dsh.client`）那条路仍然不通：它的构建预设 `packages/client/tsdown.client.ts` 没有随
-> npm 发布，要出可用的客户端 bundle 基本得进仓库。宿主插件能做的事已经够覆盖外观需求了。
+### 推理强度滑块：内部 RPC 的真实契约
 
-### 为什么还要一个桌面外壳
-
-`dsh web` 默认会用系统浏览器打开 —— 有地址栏、有标签页、任务栏图标是浏览器的。
-`desktop\BlueFishStation.cs` 是一个 WinForms + WebView2 外壳：自己拉起服务、解析带 token 的地址、
-在一个没有浏览器界面的窗口里加载它，窗口标题/图标都是「蓝色大肥鱼工作站」，关窗自动收服务。
-
-## 推理强度滑块（内部 RPC）
-
-DSH 浏览器端用的是自研 RPC。**0.1.7-rc.2 换了一套命名和信封**（实测确认）：
+DSH 浏览器端用的是自研 RPC。**0.1.7-rc.2 换了命名与信封**（以下都是打真服务端验证过的）：
 
 ```http
 POST /api/<namespace>/<method>        content-type: application/json
@@ -222,218 +208,156 @@ resp   { type:'server-response', rpcId, result: { ok:true, value } | { ok:false,
 | 写档位 | `session/selectModel` | `{ args: { request: { sessionId, provider, model, reasoningEffort } } }` |
 | 会话列表 | `session/list` | `{ args: { _request: {} } }` |
 
-旧版（0.1.0-rc.x）是**点号路径 + 裸 payload**：`POST /api/session.models`，`payload: { sessionId }`。
-`aurora.js` 两种都试，并且优先复用**从 App 自己的请求里学到的**端点名与信封样式。
-
-目录返回的结构（`session/modelCatalog`）：
+目录返回的结构（旧版字段叫 `current`，新版叫 `default`，两个都读）：
 
 ```jsonc
-{
-  "default": { "provider": "deepseek-official", "model": "deepseek-flash", "reasoningEffort": "high" },
-  "groups": [ { "id": "deepseek-official", "models": [ {
-      "id": "deepseek-flash",
-      "reasoning": { "defaultEffort": "high",
-                     "efforts": [ { "id": "off", "name": "Off" }, /* low / high / max */ ] }
-  } ] } ]
-}
+{ "default": { "provider": "...", "model": "deepseek-flash", "reasoningEffort": "high" },
+  "groups": [ { "id": "deepseek-official", "models": [ { "id": "deepseek-flash",
+      "reasoning": { "defaultEffort": "high", "efforts": [ {"id":"off","name":"Off"} /* low/high/max */ ] } } ] } ] }
 ```
 
-旧版这个字段叫 `current`（新版改名 `default`，两个都读）。实测本机档位：
-`off`(Off) / `low`(Low) / `high`(High) / `max`(Max)，默认 `high`。
+`aurora.js` 不硬编码这些名字：它 hook `window.fetch`，**从 App 自己的请求里学**端点名与信封样式，
+候选列表只用于「App 还没发过这个请求」时兜底。顺带也这样学到 `sessionId`（它藏在 `payload.args.request.sessionId` 里）。
 
-**`sessionId` 怎么来**：它没有现成的全局来源，所以 `aurora.js` 会 hook `window.fetch`，
-从 App 自己发出的 `/api/session.*` 请求体里学 —— 顺带把每个方法的真实请求体形状也记下来复用。
-注入脚本在 `<body>` 末尾、App 的 module 脚本之前执行，所以这个 hook 一定装得上。
+### 滑块是怎么长进菜单里的
 
-## 滑块的视觉与交互实现
+| 环节 | 做法 |
+|---|---|
+| 找到原生档位行 | `[role="menuitemradio"]` **四重校验**：无 `title`、文字以档位名开头、数量与档位数 1:1、有实际矩形 |
+| 藏掉原生行 | `opacity: 0`（**不是** `visibility: hidden`）+ `pointer-events: none` |
+| 摆浮层 | 覆盖在原生行那块矩形上，宽度取 `max(行宽, 344)`，垂直居中 |
+| 不被菜单关掉 | mousedown/click 捕获阶段屏蔽 + `focusout` 屏蔽（焦点落进浮层时吞掉） |
+| 拖动 | 轨道连续 `0..1000`，生效值取**最近的档位**；松手没跨档位就弹回、不提交 |
+| 定位驱动 | 输入事件（rAF，抢在绘制前）+ 250ms 轮询兜底；自激熔断 >60 次/秒则停用浮层 |
 
-### 自绘轨道 / 圆点
+尺寸都在文件顶部：`TRACK=24` `THUMB=40` `PANEL_MIN_W=344` `MOOD_H=52` `RUN_MS=1600` `RUN_FRAMES=12`。
 
-`input[type=range]` 的轨道和圆点只能靠伪元素画，所以 `aurora.js` 会往 `<head>` 插一段 `<style>`
-（选择器限定在 `#aurora-effort` 内，不影响页面其它地方）。尺寸都在文件顶部：
+**为什么 `opacity` 不能换成 `visibility`**：0.1.7 的菜单新增了 `onBlur` 关闭，切到档位面板时应用会 `focus()`
+那一行「已选中」的档位按钮；`visibility:hidden` 的元素**不可聚焦** → 焦点落回 `body` → 菜单判定焦点跑出去 → `close()`，
+表现就是「滑块刚出现就被关掉」。`opacity:0` 的元素依然可聚焦，所以两件事都能满足。
 
-```js
-const TRACK = 24        // 轨道高度
-const THUMB = 40        // 圆点直径
-const PANEL_MIN_W = 344 // 面板最小宽度（4 个中文档位名要一行放得下）
-const MOOD_H = 52       // 档位立绘显示高度
-const RUN_MS = 1600     // 跑动一轮时长（12 帧 / 1.6s ≈ 133ms 一帧）
-```
-
-### 平滑拖动 + 挡位吸附
-
-轨道是**连续**的（`0..1000`），所以拇指跟着鼠标连续走、不会被机械吸到挡位上；生效值取**离拇指最近的挡位**。
-松手时：没跨过挡位中点 → 拇指弹回原挡位、不提交；跨过了 → 提交并把拇指吸附到该刻度。
-
-拖动中 `render()` **绝不回写** `range.value`（靠 `dragging` 标志），否则 250ms 一次的定位轮询会把拇指拽回刻度、手感立刻断掉。
-
-### 雪碧图与逐帧动画
-
-- 档位立绘：`background-size: n×100% 100%` + `background-position: pct% 50%`，`pct` 与刻度、胶囊用的是**同一个百分比**，三者天然对齐。
-- 跑动图：12 格，用 `@keyframes` 显式列出 12 个停靠点，每帧 `animation-timing-function: steps(1,end)` 让它**停住**；
-  百分比分母是 `n-1=11` 而不是 12（`background-position` 的 0% 是第一格、100% 是最后一格），写成 `steps(12)` 会整体错位。
-- 抠白底：`alpha = 255 - min(R,G,B)` 再把颜色反预乘（`C' = (C - (1-a)·255)/a`），角色才能融进半透明面板而不是带一块白底。
-
-### 跑动角色为什么贴在圆点上
-
-原生 range 的**可用行程被圆点宽度内缩**了：拇指中心走的是 `[THUMB/2, width - THUMB/2]`，所以
-
-```js
-const usable = rr.width - THUMB
-const cx = rr.left + THUMB/2 + (value / STEPS) * usable
-```
-
-少减 `THUMB/2` 这一项，角色在两端就会跑得比拇指快、对不齐。垂直方向也要对齐**圆点**（40px）而不是轨道（24px）——
-圆点比轨道上下各高 8px，只按轨道算角色会压在手柄上。
-
-## 让模型能读图（一个容易踩的配置坑）
-
-如果 `read_image` 报 `model "xxx" does not declare image input`，**别急着下结论说模型不支持** ——
-`dsh-llm-deepseek` 适配器本身支持图片，只是要目录里声明 `inputModalities`。
-本机实测：`$DSH_HOME/settings.yaml` 里模型目录写的是 `[text]`，所以被直接拦掉。改成
-
-```yaml
-llm-deepseek:
-  models:
-    - id: deepseek-flash
-      inputModalities:
-        - text
-        - image
-```
-
-之后报错立刻变成「尺寸超 2000px」——说明读图链路已经通了（适配器**每次操作重读一次目录**，改完下个请求就生效，不用重启）。图片长边超过 2000px 时先缩小再读。
-
-## 实测的钩子（这是本仓库最值钱的部分）
-
-DSH 的 CSS Module 类名格式是 `<hash>_<localName>`：**hash 会随构建变，`_localName` 后缀稳定**。
-所以 `[class*="_turnStatus"]` 这类选择器跨版本可用。
-
-| 目标 | 稳定钩子 | 出处 |
-|---|---|---|
-| 侧边栏品牌标（展开） | `[class*="_brandMark"]` | ui-sidebar `renderSlot('sidebar.brand.mark')` |
-| 同上（折叠窄条） | `[class*="_railMark"]` | 同上 |
-| 品牌字标 | `[class*="_brandName"]` | `renderSlot('sidebar.brand.name')` |
-| 空白会话 Hero 品牌标 | `[class*="_fishHitbox"]` | ui-conversation `renderSlot('conversation.hero.brand.mark')` |
-| Hero 标题网格 | `[class*="_headline"]`（`grid-template-columns:34px auto auto`） | 放大图标时必须一起改第一列 |
-| 思考状态行 | **`[data-turn-process]`**（0.1.7+：那个 `<button>` 里的第一个文本节点就是文案）；旧版 `[class*="_turnStatus"]` | ui-chat `TurnProcessNodeView`；文案来自本地化 key `chat.deepDiving` / `message.turnProcess.deepDivingFor` |
-| 推理块标题 | `[data-variant="think"][data-state="running"] [class*="_title"]` | ui-conversation `ReasoningRow`，文案硬编码 `Think` |
-| 轨迹面板思考按钮 | `[class*="_thinkingToggle"]` | ui-trajectory，文案硬编码 `Thinking` |
-| 三栏布局列 | `[class*="_sidebarCol"] / _centerCol / _detailsCol` | ui-layout `AppFrame` |
-
-### 表面色令牌（浅色主题下的真实值）
+### 主题令牌与毛玻璃
 
 ```
 --dsw-alias-bg-base          = --dsw-static-neutral-bluish-00   (纯白)
---dsw-alias-bg-layer-1/2/3   = --dsw-static-neutral-bluish-00   (纯白)
 --dsw-specific-sidebar-fill  = --dsw-static-neutral-bluish-50   (#f9fafb)
---dsw-static-deepseek-500    = #4176e6                          (DeepSeek 主色)
+--dsw-static-deepseek-500    = #4176e6                          (主色)
 --dsw-alias-label-primary    = #0f1115 (浅色) / #f9fafb (深色)
 ```
 
-**关键认识**：`--dsw-alias-bg-base` 不只用于对话卡片 —— `AppFrame` 自己就 `background: var(--dsw-alias-bg-base)`，
-它是【全局调暗器】；`ConversationRoot` 又用同一个令牌叠第二层。`--dsw-specific-sidebar-fill` 更是
-被用了两次（`.sidebarCol` + 侧边栏根）。**算透明度时必须按真实层数叠乘**，否则背景图会被叠没。
+关键认识：`--dsw-alias-bg-base` 不只用在对话卡片 —— `AppFrame` 自己就 `background: var(...)`，是**全局调暗器**；
+`ConversationRoot` 又叠了一层。算透明度时必须**按真实层数叠乘**，否则背景图会被叠没。
+这些 alias 令牌是**行内样式写在 body 上**的，所以覆盖要 `!important` 且作用域落在 `body`。
 
-## 踩过的坑（都真踩过，别再踩）
+### 绘图工作站（两半结构）
 
-### 1) MutationObserver 自激 —— 页面直接卡死
+| 文件 | 作用 |
+|---|---|
+| `lib/index.js` | 宿主半侧接线：配置、令牌、Index 注入 |
+| `lib/presets.js` | 预设加载：读 `specs/*.md`，支持 `base` 继承与 config 覆盖 |
+| `lib/expand.js` | 扩写核心，只依赖 `ctx.llm`，可脱离服务器单独测 |
+| `lib/lint.js` | 规范自检：把「模型该守规矩」变成代码能判定的事 |
+| `lib/generate.js` | 出图核心：调中转站、剥离无效参数、校验返回字节、算账 |
+| `lib/routes.js` | 传输层：HTTP + NDJSON 流 + 令牌鉴权 + 图片读取 |
+| `lib/client.js` | 浏览器半侧（手写 bundle，无构建步骤） |
+| `specs/*.md` | 提示规范（知识）。改这里就是改行为 |
 
-我第一版用 `MutationObserver(childList, subtree)` 观察 `body`，回调里判断「只要菜单里有档位行就重新定位」，
-而定位函数会写自己浮层的刻度（`textContent=''` + `appendChild`）。浮层就挂在 `body` 下、也在观察范围内 ——
-**自己产生的 DOM 变更触发自己的回调**，而 MutationObserver 回调是微任务，微任务里再生产微任务，
-浏览器永远轮不到绘制和响应事件：页面卡死，只能重启标签页。
+## 换素材 / 调参
 
-**修法不是打补丁，是换驱动方式**：定位改由 **250ms 定时器**驱动，Observer 只做文案替换、绝不写定位相关的 DOM。
-定时器不会被自己的写入触发，回路在结构上就不可能出现。另外加了两层保险：`place()` 先比签名（位置没变就不写 DOM）、
-一秒内调度超 60 次就**熔断**（彻底停用浮层并恢复原生行）。
+| 文件 | 用途 | 说明 |
+|---|---|---|
+| `logo.jpg` | 品牌标（侧边栏/折叠态/Hero）+ favicon | 方形效果最好，960×960 |
+| `fish.png` | 思考状态行前的图标（已抠白底） | 127×126 |
+| `fish-flat.png` | 同上但保留白底 | 备选 |
+| `bg.jpg` | 整站背景图 | **当前 2560×1600**（= 本机 150% 缩放下的物理分辨率，1:1 不放大）。换图用 `tools\mkbg.cs`：`mkbg.exe <输入图> bg.jpg 2560 1600 0.55` |
+| `moods.png` | 四档角色立绘 | 4 格雪碧图，160×128/格 |
+| `run.png` | 拖动时的跑动循环 | 12 格雪碧图，96×77/格 |
 
-### 2) 菜单的 closeOutside 把拖动吃掉了
+换完**直接 F5**（插件模式）；只有文件注入模式才需要跑一次 `sync.ps1`。
 
-DSH 的模型菜单在 `document` 上挂了 `mousedown` 的「点在菜单外就关闭」。我们的浮层挂在菜单 DOM 之外，
-于是**按下滑块 = 点了菜单外面 = 菜单立刻关闭**，浮层在下一个轮询里被隐藏，拖动还没结束就没了。
-表现就是「只能点、不能拖」。修法：在浮层上 `stopPropagation` 掉 `mousedown/pointerdown/touchstart/click`。
-
-### 3) `backdrop-filter` 会给 `position: fixed` 当包含块
-
-加在侧边栏列上，结果挂在侧边栏子树里的全屏设置面板（`position:fixed;inset:0;z-index:1000`）被挤进 264px 宽的侧边栏。
-
-### 4) `isolation: isolate` 会创建层叠上下文
-
-改用 `isolation` 后尺寸正常了，但那个 `z-index:1000` 的 fixed 层被关在侧边栏的层叠上下文里出不来，
-被后面的对话列盖住、点不到。
-
-**3、4 的共同结论**：`isolation / filter / transform / backdrop-filter / will-change / contain` 这些属性，
-都不能加在「别人的全屏 fixed 层挂在我 DOM 子树里」的容器上。侧边栏就是这种容器。
-当前实现只留了 `position: relative`（既不创建层叠上下文、也不当 fixed 的包含块），模糊挂在 `::before` 上（伪元素没有后代）。
-
-### 5) `[class*="_frame"] > *` 这种通配后代选择器
-
-想一次覆盖三栏，结果命中了铺满全屏的层，`backdrop-filter` 一上去整个界面都被虚化。
-教训：`backdrop-filter` 只加在确定是面板的元素上。
-
-### 6) `.ps1` 里不要写非 ASCII 字符
-
-这个 shell 会把脚本按 ANSI 读，中文字节可能吞掉一个引号导致语法错误（踩过一次）。
-`sync.ps1` / `install.ps1` 保持纯 ASCII。
-
-## CSS 陷阱（都踩过，别再踩）
-
-1. **不要用通配后代选择器挂 `backdrop-filter`**：`[class*="_frame"] > *` 会命中铺满全屏的层，
-   整个界面被虚化。
-2. **`backdrop-filter` 会创建 fixed 的包含块**：加在 `_sidebarCol` 上，挂在侧边栏子树里的
-   全屏设置面板（`.overlay{position:fixed;inset:0;z-index:1000}`）会被挤进 264px 宽的侧边栏。
-3. **`isolation: isolate` 会创建层叠上下文**：面板尺寸正常了，但被关在侧边栏的层叠上下文里 →
-   被后面的对话列盖住、点不到。
-
-结论：`isolation / filter / transform / backdrop-filter / will-change / contain` 这些属性，
-**都不能加在「别人的全屏 fixed 层挂在我 DOM 子树里」的容器上**。侧边栏就是这种容器。
-当前实现只在 `_sidebarCol` 上留了 `position: relative`（安全），模糊挂在 `::before`（伪元素没有后代）。
-
-## 调参
-
-全在 `aurora.css` 第 4 节：
+样式调参全在 [`aurora.css`](aurora.css) 第 4 节：
 
 | 想要的效果 | 改什么 |
 |---|---|
-| 背景图更清晰 | 最上层的白纱 `rgba(255,255,255,.10)` 调小；`--dsw-alias-bg-base` 调小 |
+| 背景图更清晰 | 最上层白纱 `rgba(255,255,255,.10)` 调小；`--dsw-alias-bg-base` 调小 |
 | 文字发花 | 白纱调大（最安全的全局提亮），或反着调各层 alpha |
 | 侧边栏玻璃更明显 | `--dsw-specific-sidebar-fill` 调小，`blur(14px)` 调大 |
-| 侧边栏不想要虚化 | 删掉 `[class*="_sidebarCol"]::before` 整段，只保留半透明 |
-| 字号 / 图标大小 | 第 1、2 节里的 `width/height/font-size` |
+| 侧边栏不想要虚化 | 删掉 `[class*="_sidebarCol"]::before` 整段 |
+| 滑块尺寸/跑动速度 | `aurora.js` 顶部的 `TRACK`/`THUMB`/`MOOD_H`/`RUN_MS` |
 
-## 升级 DSH 之后要做什么
+## 排错
 
-1. 插件模式：**什么都不用做**（插件会自动注入），最多 F5 一下；
-2. 文件注入模式：重跑 `install.ps1`；
-3. 如果思考状态行/品牌标之类**突然不生效了**，看浏览器控制台：有 `[aurora] 运行状态容器钩子全都没匹配上…`
-   这类告警就说明上游改了钩子，把日志发我即可。
-
-### 已知的上游变化（dsh-v0.1.7-rc.2 实测）
-
-| 我们的钩子 | 新版状态 |
+| 现象 | 看哪里 |
 |---|---|
-| 思考状态行 `[class*="_turnStatus"]` | ❌ rc.2 **产物里没有** `data-chat-running`（那是 master 源码里的，比 rc.2 新）；✅ 真实结构是 `<button data-turn-process>` + 内部 `<span class="_label">`，已作为首选钩子 |
-| 文案 `Deep diving...` | ❌ 变成本地化 key：`chat.deepDiving` =「深度求索中」/`Deep diving...`，`message.turnProcess.deepDivingFor` =「深度求索中，用时{duration}」；✅ 已改成**语义匹配 + 保留计时尾巴**（显示成「大肥鱼正在吃你的 TOKEN，用时12秒」） |
+| 桌面应用起不来 | `%LOCALAPPDATA%\BlueFishStation\station.log`（含服务 stdout/stderr） |
+| 想不动窗口验证一遍 | `& "$env:LOCALAPPDATA\BlueFishStation\BlueFishStation.exe" --selftest` → 退出码 0 = WebView2 起来了且覆盖层生效 |
+| 美化不生效 | 浏览器控制台 `[aurora] armed: ...`（脚本起来了）/ 终端里 `[aurora] overlay plugin active`（插件生效） |
+| 思考文案没被替换 | 控制台 `[aurora] 运行状态容器钩子全都没匹配上…` → 上游改结构了 |
+| 滑块不出来 | 控制台 `[aurora] radios=… matched=… efforts=…` 这行会说明是「菜单没了」「匹配失败」还是「目录读取失败」 |
+| 改完 CSS/JS 没变化 | 确认走的是插件模式（终端应有 `[aurora] overlay plugin active`），然后 F5 |
+
+## 卸载与回滚
+
+```powershell
+# 美化插件
+powershell -File .\uninstall-plugin.ps1      # 移除 junction + 清掉 bundles/dependencies，然后重启 dsh web
+
+# 桌面应用：删掉桌面快捷方式 + %LOCALAPPDATA%\BlueFishStation\ 即可（不在系统里注册任何东西）
+
+# 文件注入模式
+$d = Join-Path $env:DSH_HOME 'profiles\node_modules\@deepseek-ai\dsh-web-frontend\dist'
+Copy-Item "$d\index.html.aurora-bak" "$d\index.html" -Force
+Remove-Item "$d\aurora.css","$d\aurora.js","$d\aurora-logo.svg","$d\aurora-fish.svg","$d\aurora-bg.svg","$d\aurora-moods.svg","$d\aurora-run.svg" -Force -ErrorAction SilentlyContinue
+```
+
+## 升级 DSH 之后
+
+1. **插件模式**：什么都不用做，最多 F5；
+2. **桌面应用**：不用动（每次启动都会重新解析地址与 token）；
+3. **文件注入模式**：重跑 `install.ps1`。
+
+### 上游变化对照表（0.1.7-rc.2 实测）
+
+| 我们依赖的东西 | 新版状态 |
+|---|---|
+| 思考状态行 `[class*="_turnStatus"]` | ❌ rc.2 产物里**没有** `data-chat-running`（那是 master 源码里的，比 rc.2 新）；✅ 真实结构是 `<button data-turn-process>` + 内部 `<span class="_label">`，已作为首选钩子 |
+| 文案 `Deep diving...` | ❌ 变成本地化 key（`chat.deepDiving` / `message.turnProcess.deepDivingFor`）；✅ 已改成语义匹配 + 保留计时尾巴 |
+| 模型菜单 `role="menuitemradio"` + `effortChoices` | ✅ 原样（但菜单新增了 `onBlur` 关闭，见上文） |
+| RPC 读档位 `session.models` | ❌ 改名 `session/modelCatalog`（斜杠、无参数），`current` → `default` |
+| RPC 信封 | ❌ 多了一层 `payload.args`（按描述符 wire 名嵌套） |
 | 品牌标 `_brandMark` / Hero `_fishHitbox` / 轨迹 `_thinkingToggle` | ✅ 都还在 |
-| 模型菜单 `role="menuitemradio"` 与 `effortChoices` 结构 | ✅ 原样 |
-| RPC **读档位** `session.models` | ❌ 改名 `session/modelCatalog`（**斜杠**路径、**无参数**），返回里 `current` → **`default`** |
-| RPC **信封** | ❌ 多了一层：`payload: { args: <按描述符 wire 名的对象> }`（旧版是裸 payload）。例：`session/selectModel` → `args:{request:{...}}`、`session/list` → `args:{_request:{}}`、`session/modelCatalog` → `args:{}` |
-| RPC `session.selectModel` | ⚠️ 方法名没变，但路径与信封变了：`POST /api/session/selectModel` + `args.request` |
-| frontend-static 的 MIME 表 | ✅ 一模一样（图片仍需包进 SVG） |
+| frontend-static MIME 表 | ✅ 一模一样（图片仍需包进 SVG） |
+
+## 踩坑记录
+
+1. **MutationObserver 自激 = 页面卡死**。回调里写自己观察范围内的 DOM，微任务里再生产微任务，浏览器永远轮不到绘制。
+   修法不是打补丁而是换驱动：定位改由输入事件 + 定时器驱动，Observer 只做文案替换。
+2. **菜单的 `onBlur` 会吃掉滑块**：焦点离开菜单就 `close()`。用 `focusout` 捕获屏蔽 + 让浮层自己接住焦点解决。
+3. **`opacity` vs `visibility`**：前者可聚焦、后者不可。在这套菜单里这一条决定了「滑块能不能活过一帧」。
+4. **`backdrop-filter` 会给 `position: fixed` 当包含块**，`isolation: isolate` 会创建层叠上下文 ——
+   都不能加在「别人的全屏 fixed 层挂在我 DOM 子树里」的容器上（侧边栏就是这种容器）。
+5. **DPI 不感知 = 整窗位图拉伸**：`csc` 默认清单里没有 DPI 声明，150% 缩放下全窗口发糊。
+6. **.NET 的 `Icon` 类读不了 PNG 压缩条目的 ICO**（`ToBitmap()` 抛异常），而 Explorer 能读；
+   所以窗口图标是运行时 `GetHicon()` 从 PNG 加载的。
+7. **`.ps1` 不要写非 ASCII**：Windows PowerShell 5.1 按 ANSI 读脚本，中文字节可能吞掉引号导致语法错误。
+   所有脚本保持纯 ASCII，中文名用码点拼（如桌面快捷方式名）。
+8. **GitHub 仓库名只允许 ASCII**，而且 API 对非法字符是「静默裁剪」不报错 —— 别拿线上仓库做实验。
+9. **`git add -A` 会扫到并行会话的在制品**。本仓库曾因此误提交（已撤回并 force-push）。**只用显式路径 add**。
+10. **绘图站：相对 `outputDir` 按 `$DSH_HOME` 解析，不按 cwd** —— 按 cwd 时图被写进了 DSH 安装目录（找不到、还可能被升级删掉）。
 
 ## 已知限制
 
-- **插件模式**下 `dsh-web-frontend` 升级不会丢注入；**文件注入模式**下需要重跑 `install.ps1`。
-- 只支持浅色主题（所有覆盖都在 `body:not([data-ds-dark-theme])` 作用域内，深色主题保持原样）。
-- 文案走**本地化 key**，所以脚本按语义匹配（认「深度求索中 / Deep diving」这类前缀）而不是写死字符串；
-  上游换措辞时要在 `aurora.js` 的 `COPY_PATTERNS` 里补一条（失配时 `selfCheck` 会在控制台告警）。
-- 与 DSH 的具体版本强相关（钩子是 `data-*` 属性 + `<hash>_<localName>` 后缀），跨大版本升级后建议重新核对。
-- `/api/<namespace>/<method>` 是 DSH 内部协议，没有稳定性承诺；端点名或信封形状再变时，
-  滑块需要同步调整（`aurora.js` 会先试学到的端点、再试候选列表，并把失败原因写在滑块上，不静默失败）。
-- 滑块会实时改写**当前会话**的推理强度（和界面里选模型时选 effort 是同一个操作）。
+- 只支持**浅色主题**（所有覆盖都在 `body:not([data-ds-dark-theme])` 作用域内，深色主题保持原样）。
+- 美化插件与 DSH 的具体版本强相关（钩子是 `data-*` 属性 + `<hash>_<localName>` 后缀），跨大版本升级后建议核对控制台告警。
+- `/api/<namespace>/<method>` 是 DSH 内部协议，没有稳定性承诺；端点或信封再变时，滑块需要同步调整。
+- 滑块会实时改写**当前会话**的推理强度（与界面里选 effort 是同一个操作）。
+- 绘图站：切回对话后**看不到实时进度**（出图不会中断，跑完自动出现在记录里）；蒙版涂刷界面尚未实现。
+- 桌面应用只在 Windows 上验证过（WebView2 运行时随 Edge 安装，Win10/11 一般都在）。
 
 ## License
 
-MIT —— 见 [LICENSE](LICENSE)。代码可自由使用；`logo.jpg` / `fish.png` / `bg.jpg` / `moods.png` /
-`run.png` 是仓库作者的个人素材（其中角色立绘与跑动图取自作者自己的设计稿），替换成你自己的即可。
+MIT —— 见 [LICENSE](LICENSE)。代码可自由使用。
 
+素材（`logo.jpg` / `fish.png` / `fish-flat.png` / `bg.jpg` / `moods.png` / `run.png` /
+`desktop/app-icon*.png` / `docs/station-intro.png`）是仓库作者的个人素材
+（角色立绘与跑动图取自作者自己的设计稿），**替换成你自己的即可**。
