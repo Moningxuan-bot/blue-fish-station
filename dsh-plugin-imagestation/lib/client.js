@@ -422,13 +422,85 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * 取当前令牌。
+     *
+     * 页面里的令牌来自**渲染该页面时的宿主进程**，所以它可能过期：浏览器缓存了旧 bundle、
+     * 或同时开着两个工作站窗口（各自是独立宿主进程）时，页面手上的令牌就与当前宿主不一致。
+     * 这个端点让面板能重新问一次，从而自愈 —— 而不是让用户去理解令牌机制。
+     */
+    let tokenOverride = null
+    async function refreshToken() {
+      const res = await fetch(API + '/token', { headers: { 'cache-control': 'no-cache' } })
+      if (!res.ok) throw new Error('取令牌失败：HTTP ' + res.status)
+      const body = await res.json()
+      if (!body || typeof body.token !== 'string' || body.token === '') {
+        throw new Error('宿主没有返回令牌。')
+      }
+      tokenOverride = body.token
+      return tokenOverride
+    }
+
+    const authHeader = () => ({ authorization: 'Bearer ' + (tokenOverride || readToken()) })
+
+    /**
+     * 带一次自愈重试的请求。
+     *
+     * 401 时先问 `/token` 拿当前令牌再重试一次；仍失败才报错。
+     * 这样"陈旧令牌"从"用户看不懂的故障"变成"面板自己悄悄修好"。
+     */
+    async function fetchWithAuthRetry(path, init) {
+      const build = () =>
+        fetch(API + path, Object.assign({}, init, {
+          headers: Object.assign({}, authHeader(), (init && init.headers) || {}),
+        }))
+
+      let res = await build()
+      if (res.status !== 401) return res
+
+      // 401：把响应体读出来（可能是要展示的诊断），再取新令牌重试。
+      let firstBody = null
+      try {
+        firstBody = await res.text()
+      } catch {
+        /* 读不到就算了，重试优先 */
+      }
+      try {
+        await refreshToken()
+      } catch (err) {
+        // 连令牌都取不到，就把第一次的错误如实抛出，附上取令牌的失败原因。
+        const e = new Error('会话令牌不匹配，且自动重取令牌失败：' + (err && err.message ? err.message : String(err)))
+        e.firstBody = firstBody
+        throw e
+      }
+      res = await build()
+      return res
+    }
+
+    /**
+     * 把宿主的错误载荷拼成一句人话。
+     *
+     * 宿主的 401 会带 `diagnostic` 与 `hint`：**只报"令牌不对"对用户毫无帮助**。
+     */
+    function describeFailure(payload, res, text) {
+      if (payload && (payload.message || payload.error)) {
+        const parts = [payload.message || payload.error]
+        if (payload.diagnostic) {
+          const d = payload.diagnostic
+          parts.push(
+            '（收到：' + (d.receivedFrom || '未知') +
+              '，值 ' + (d.receivedTail || '（空）') +
+              '；宿主期望 ' + (d.expectedTail || '未知') + '）',
+          )
+        }
+        if (payload.hint) parts.push(payload.hint)
+        return parts.join('\n')
+      }
+      return 'HTTP ' + res.status + (text ? '：' + text.slice(0, 160) : '')
+    }
+
     async function apiJson(path, options) {
-      const res = await fetch(API + path, Object.assign({ headers: {} }, options, {
-        headers: Object.assign(
-          { authorization: 'Bearer ' + readToken() },
-          (options && options.headers) || {},
-        ),
-      }))
+      const res = await fetchWithAuthRetry(path, options)
       const text = await res.text()
       let payload = null
       try {
@@ -436,12 +508,7 @@ window.__ModuleLoader__.load({
       } catch {
         /* 保留下面的状态码分支处理非 JSON 响应 */
       }
-      if (!res.ok) {
-        const message =
-          (payload && (payload.message || payload.error)) ||
-          'HTTP ' + res.status + (text ? '：' + text.slice(0, 160) : '')
-        throw new Error(message)
-      }
+      if (!res.ok) throw new Error(describeFailure(payload, res, text))
       return payload
     }
 
@@ -625,12 +692,9 @@ window.__ModuleLoader__.load({
         abortRef.current = ac
 
         try {
-          const res = await fetch(API + '/expand', {
+          const res = await fetchWithAuthRetry('/expand', {
             method: 'POST',
-            headers: {
-              authorization: 'Bearer ' + readToken(),
-              'content-type': 'application/json',
-            },
+            headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ text: input, presetId }),
             signal: ac.signal,
           })
@@ -643,9 +707,7 @@ window.__ModuleLoader__.load({
             } catch {
               /* 用下面的兜底文案 */
             }
-            throw new Error(
-              (payload && (payload.message || payload.error)) || 'HTTP ' + res.status,
-            )
+            throw new Error(describeFailure(payload, res, raw))
           }
 
           const reader = res.body.getReader()
@@ -731,12 +793,9 @@ window.__ModuleLoader__.load({
         drawAbortRef.current = ac
 
         try {
-          const res = await fetch(API + '/generate', {
+          const res = await fetchWithAuthRetry('/generate', {
             method: 'POST',
-            headers: {
-              authorization: 'Bearer ' + readToken(),
-              'content-type': 'application/json',
-            },
+            headers: { 'content-type': 'application/json' },
             body: JSON.stringify(
               Object.assign(
                 { prompt: p, params: imgParams },
@@ -763,7 +822,7 @@ window.__ModuleLoader__.load({
             } catch {
               /* 用下面的兜底文案 */
             }
-            throw new Error((payload && (payload.message || payload.error)) || 'HTTP ' + res.status)
+            throw new Error(describeFailure(payload, res, raw))
           }
 
           const reader = res.body.getReader()
@@ -904,7 +963,7 @@ window.__ModuleLoader__.load({
         setError(null)
         try {
           const res = await fetch(url)
-          if (!res.ok) throw new Error('HTTP ' + res.status)
+          if (!res.ok) throw new Error('取图失败：HTTP ' + res.status)
           const blob = await res.blob()
           const file = new File([blob], name || 'reference.png', { type: blob.type || 'image/png' })
           const shrunk = await shrinkImage(file)

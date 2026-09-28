@@ -166,6 +166,40 @@ function readBody(req, limitBytes) {
 export function registerRoutes({ ctx, config, token, selectionOf }) {
   const disposers = []
 
+  /**
+   * DSH 的浏览器会话 cookie 名。
+   *
+   * 不硬编码：写在代码里就会跟着 DSH 改版失效，而且是猜。改成**从首页响应里学**——
+   * 那是一个同源、无需本插件参与的真实请求，`set-cookie` 里必然带着会话名。
+   * 学不到时留空，此时只要求"请求带了任意 cookie"，宽松但聊胜于无（见 /token 的说明）。
+   */
+  let sessionCookieName = ''
+  ctx.effect(() => {
+    let alive = true
+    const base = 'http://' + (ctx.webServer.host || '127.0.0.1') + ':' + ctx.webServer.port
+    fetch(base + '/')
+      .then((res) => {
+        if (!alive) return
+        const list = res.headers.getSetCookie ? res.headers.getSetCookie() : []
+        for (const raw of list) {
+          const name = String(raw).split('=')[0].trim()
+          if (name !== '') {
+            sessionCookieName = name
+            break
+          }
+        }
+        if (sessionCookieName !== '') {
+          console.log('[imagestation] session cookie name learned: ' + sessionCookieName)
+        }
+      })
+      .catch(() => {
+        /* 学不到就退化成宽松判据，不影响功能 */
+      })
+    return () => {
+      alive = false
+    }
+  }, 'image-station: learn session cookie name')
+
   const handler = async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
     const fullPath = url.pathname
@@ -180,8 +214,65 @@ export function registerRoutes({ ctx, config, token, selectionOf }) {
       )
     }
 
+    /*
+     * GET /token —— 让面板能从陈旧令牌里自愈。
+     *
+     * 为什么需要它：页面里的令牌来自**渲染该页面时的宿主进程**。浏览器缓存了旧 bundle、
+     * 或同时开着两个工作站窗口（各自是独立宿主进程）时，页面手上的令牌就与当前宿主不一致，
+     * 面板会一直报 401 而用户无从下手。这个端点让面板能重新问一次并自己重试 ——
+     * **故障恢复不该要求用户理解令牌机制**。
+     *
+     * 为什么它不是"把鉴权拆了"：
+     *   · 要求带上 DSH 自己的浏览器会话 cookie（同源请求浏览器必然自动携带，
+     *     而 curl / 别的页面 / 别的端口都不会带上这个域的会话）。实测：不带 cookie
+     *     访问首页会被 /api 的信任栅栏挡回 401，所以这个 cookie 是真凭据，不是形式。
+     *   · 服务只监听回环地址。
+     *
+     * 边界如实说：能跑在本页面里的脚本本来就能读到页面上的令牌，所以这道检查挡的是
+     * "本机任意页面**无意间**驱动本面板"，**不是**对抗本机代码的强边界 ——
+     * 与 token 路由的既有取舍一致。
+     */
+    if (path === '/token' && method === 'GET') {
+      const cookieName = sessionCookieName || ''
+      const cookieHeader = String((req.headers && req.headers.cookie) || '')
+      const hasSession =
+        cookieHeader !== '' &&
+        (cookieName === '' || cookieHeader.includes(cookieName + '='))
+      if (!hasSession) {
+        sendJson(res, 403, {
+          error: 'no-session',
+          message: '取令牌需要 DSH 的浏览器会话 cookie。请从工作站窗口打开本页面。',
+        })
+        return
+      }
+      sendJson(res, 200, { token })
+      return
+    }
+
     if (bearerOf(req) !== token && queryTokenOf(url) !== token) {
-      sendJson(res, 401, { error: 'unauthorized', message: '缺少或错误的会话令牌。' })
+      /*
+       * 401 必须**自我说明**，否则用户只看到"令牌不对"却无从下手。
+       *
+       * 只报长度与末四位，不回显令牌本身 —— 诊断信息不该变成泄漏渠道。
+       */
+      const got = bearerOf(req) || queryTokenOf(url) || ''
+      const tail = (s) => (s ? s.slice(-4) + '（' + s.length + ' 字符）' : '（空）')
+      const headerRaw = req.headers && (req.headers.authorization || req.headers.Authorization)
+      sendJson(res, 401, {
+        error: 'unauthorized',
+        message: '会话令牌不匹配：页面手上的令牌与宿主当前的令牌不同。',
+        diagnostic: {
+          receivedFrom: bearerOf(req) ? 'Authorization 头' : queryTokenOf(url) ? 'query 参数' : '两处都没有',
+          receivedTail: tail(got),
+          expectedTail: tail(token),
+          authorizationHeaderPresent: typeof headerRaw === 'string',
+        },
+        hint:
+          headerRaw === undefined
+            ? '请求里完全没带 Authorization 头。面板会自动重取令牌并重试一次；若仍失败，按 Ctrl+Shift+R 强制刷新。'
+            : '带了头但值不匹配，通常是同时开着两个工作站窗口（各自是独立宿主进程）。关掉多余窗口只留一个即可；面板也会自动重取令牌重试。',
+        retryable: true,
+      })
       return
     }
 
