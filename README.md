@@ -173,7 +173,7 @@ Remove-Item "$d\aurora.css","$d\aurora.js","$d\aurora-logo.svg","$d\aurora-fish.
 | `logo.jpg` | 品牌标（侧边栏/折叠态/Hero）+ favicon | 方形效果最好 |
 | `fish.png` | 思考状态行前的图标（已抠白底） | 由 `fish-src.png` 处理而来 |
 | `fish-flat.png` | 同上但保留白底 | 备选，切 `aurora.css` 里的 url 即可 |
-| `bg.jpg` | 整站背景图 | `cover` 裁切，注意左右会被裁 |
+| `bg.jpg` | 整站背景图 | `cover` 铺满，注意左右会被裁。**当前 2560×1600**（正好等于本机 150% 缩放下的物理分辨率，不再被放大）。换图后用 `tools\mkbg.cs` 转换：居中裁到 16:10 + 双三次重采样 + 轻度锐化（`mkbg.exe <in> bg.jpg 2560 1600 0.55`） |
 | `moods.png` | 四个档位的角色立绘（4 格等宽雪碧图，160×128/格） | 取自设计稿 1/3/4/5 号角色，已抠白底 |
 | `run.png` | 拖动时的跑动循环（12 格等宽雪碧图，96×77/格） | 取自跑动设计稿的 12 帧 |
 
